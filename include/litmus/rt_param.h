@@ -189,6 +189,12 @@ struct rt_param {
 	unsigned int		num_locks_held;
 	/* How many PCP/SRP locks does the task currently hold/wait for? */
 	unsigned int		num_local_locks_held;
+
+	// For the OMLP, there is a wait_queue_node for the FQ and a heap node for the PQ
+#ifdef CONFIG_LITMUS_LOCKING_OMLP
+	struct bheap_node* omlp_heap_node;
+	wait_queue_entry_t omlp_fq_node;
+#endif
 #endif
 
 	/* user controlled parameters */

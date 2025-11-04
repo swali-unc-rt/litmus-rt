@@ -112,6 +112,18 @@ config LITMUS_LOCKING
 	  Say Yes if you want to include locking protocols such as the FMLP and
 	  Baker's SRP.
 
+config LITMUS_LOCKING_OMLP
+		bool "OMLP (O(m) Locking Protocol) support"
+	depends on LITMUS_LOCKING
+	default y
+	help
+	  Enable the OMLP (O(m) Locking Protocol) multiprocessor real-time locking
+	  protocol. The OMLP provides lower blocking times than the FMLP when
+	  tasks share many resources.
+
+	  Say Yes if you want to use the OMLP protocol.
+	  Say No if you want to use other protocols such as the FMLP or Baker's SRP.
+
 endmenu
 
 menu "Performance Enhancements"

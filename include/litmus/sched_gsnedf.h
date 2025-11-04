@@ -20,4 +20,9 @@ int gsnedf_cpu_lower_prio(struct bheap_node *_a, struct bheap_node *_b);
 noinline void gsnedf_job_arrival(struct task_struct* task);
 noinline void gsnedf_unlink(struct task_struct* t);
 
+#ifdef CONFIG_LITMUS_LOCKING
+void gsnedf_set_priority_inheritance(struct task_struct* t, struct task_struct* prio_inh);
+void gsnedf_clear_priority_inheritance(struct task_struct* t);
+#endif
+
 #endif

@@ -28,6 +28,9 @@ static const struct fdso_ops* fdso_ops[] = {
 	&generic_lock_ops, /* DPCP_SEM */
 	&generic_lock_ops, /* PCP_SEM */
 	&generic_lock_ops, /* DFLP_SEM */
+#ifdef CONFIG_LITMUS_LOCKING_OMLP
+	&generic_lock_ops, /* OMLP_SEM */
+#endif
 };
 
 static int fdso_create(void** obj_ref, obj_type_t type, void* __user config)

@@ -27,7 +27,12 @@ typedef enum  {
 
 	DFLP_SEM	= 6,
 
-	MAX_OBJ_TYPE	= 6
+#ifdef CONFIG_LITMUS_LOCKING_OMLP
+	OMLP_SEM = 7,
+#endif
+
+	// This must be manually updated
+	MAX_OBJ_TYPE	= 7
 } obj_type_t;
 
 struct inode_obj_id {

@@ -40,6 +40,10 @@
 
 #include <litmus/sched_gsnedf.h>
 
+#ifdef CONFIG_LITMUS_LOCKING_OMLP
+#include <litmus/gsnedf-omlp.h>
+#endif
+
 /* Overview of GSN-EDF operations.
  *
  * For a detailed explanation of GSN-EDF have a look at the FMLP paper. This
@@ -606,21 +610,114 @@ static void gsnedf_task_exit(struct task_struct * t)
 		gsnedf_cpus[tsk_rt(t)->scheduled_on]->scheduled = NULL;
 		tsk_rt(t)->scheduled_on = NO_CPU;
 	}
+#ifdef CONFIG_LITMUS_LOCKING_OMLP
+	gsnedf_omlp_on_exit_task(t);
+#endif
 	raw_spin_unlock_irqrestore(&gsnedf_lock, flags);
 
 	BUG_ON(!is_realtime(t));
-        TRACE_TASK(t, "RIP\n");
+    TRACE_TASK(t, "RIP\n");
 }
 
 
 static long gsnedf_admit_task(struct task_struct* tsk)
 {
-	return 0;
+	int rv = 0;
+#ifdef CONFIG_LITMUS_LOCKING_OMLP
+	rv = gsnedf_omlp_on_admit_task(tsk);
+	if( rv ) return rv;
+#endif
+	return rv;
 }
 
 #ifdef CONFIG_LITMUS_LOCKING
 
 #include <litmus/gsnedf-fmlp.h>
+
+/* called with IRQs off */
+void gsnedf_set_priority_inheritance(struct task_struct* t, struct task_struct* prio_inh) {
+	int linked_on;
+	int check_preempt = 0;
+
+	raw_spin_lock(&gsnedf_lock);
+
+	TRACE_TASK(t, "inherits priority from %s/%d\n", prio_inh->comm, prio_inh->pid);
+	tsk_rt(t)->inh_task = prio_inh;
+
+	linked_on  = tsk_rt(t)->linked_on;
+
+	/* If it is scheduled, then we need to reorder the CPU heap. */
+	if (linked_on != NO_CPU) {
+		TRACE_TASK(t, "%s: linked  on %d\n",
+			   __FUNCTION__, linked_on);
+		/* Holder is scheduled; need to re-order CPUs.
+		 * We can't use heap_decrease() here since
+		 * the cpu_heap is ordered in reverse direction, so
+		 * it is actually an increase. */
+		bheap_delete(gsnedf_cpu_lower_prio, &gsnedf_cpu_heap,
+			    gsnedf_cpus[linked_on]->hn);
+		bheap_insert(gsnedf_cpu_lower_prio, &gsnedf_cpu_heap,
+			    gsnedf_cpus[linked_on]->hn);
+	} else {
+		/* holder may be queued: first stop queue changes */
+		raw_spin_lock(&gsnedf.release_lock);
+		if (is_queued(t)) {
+			TRACE_TASK(t, "%s: is queued\n",
+				   __FUNCTION__);
+			/* We need to update the position of holder in some
+			 * heap. Note that this could be a release heap if we
+			 * budget enforcement is used and this job overran. */
+			check_preempt =
+				!bheap_decrease(edf_ready_order,
+					       tsk_rt(t)->heap_node);
+		} else {
+			/* Nothing to do: if it is not queued and not linked
+			 * then it is either sleeping or currently being moved
+			 * by other code (e.g., a timer interrupt handler) that
+			 * will use the correct priority when enqueuing the
+			 * task. */
+			TRACE_TASK(t, "%s: is NOT queued => Done.\n",
+				   __FUNCTION__);
+		}
+		raw_spin_unlock(&gsnedf.release_lock);
+
+		/* If holder was enqueued in a release heap, then the following
+		 * preemption check is pointless, but we can't easily detect
+		 * that case. If you want to fix this, then consider that
+		 * simply adding a state flag requires O(n) time to update when
+		 * releasing n tasks, which conflicts with the goal to have
+		 * O(log n) merges. */
+		if (check_preempt) {
+			/* heap_decrease() hit the top level of the heap: make
+			 * sure preemption checks get the right task, not the
+			 * potentially stale cache. */
+			bheap_uncache_min(edf_ready_order,
+					 &gsnedf.ready_queue);
+			gsnedf_check_for_preemptions();
+		}
+	}
+
+	raw_spin_unlock(&gsnedf_lock);
+}
+
+/* called with IRQs off */
+void gsnedf_clear_priority_inheritance(struct task_struct* t) {
+	raw_spin_lock(&gsnedf_lock);
+
+	/* A job only stops inheriting a priority when it releases a
+	 * resource. Thus we can make the following assumption.*/
+	BUG_ON(tsk_rt(t)->scheduled_on == NO_CPU);
+
+	TRACE_TASK(t, "priority restored\n");
+	tsk_rt(t)->inh_task = NULL;
+
+	/* Check if rescheduling is necessary. We can't use heap_decrease()
+	 * since the priority was effectively lowered. */
+	gsnedf_unlink(t);
+	gsnedf_job_arrival(t);
+
+	raw_spin_unlock(&gsnedf_lock);
+}
 
 /* **** lock constructor **** */
 static long gsnedf_allocate_lock(struct litmus_lock **lock, int type,
@@ -639,7 +736,14 @@ static long gsnedf_allocate_lock(struct litmus_lock **lock, int type,
 		else
 			err = -ENOMEM;
 		break;
-
+#ifdef CONFIG_LITMUS_LOCKING_OMLP
+	case OMLP_SEM:
+		/* OMLP for GSN-EDF */
+		*lock = gsnedf_new_omlp();
+		if (*lock) err = 0;
+		else err = -ENOMEM;
+		break;
+#endif
 	};
 
 	return err;
@@ -728,7 +832,7 @@ static long gsnedf_deactivate_plugin(void)
 static struct sched_plugin gsn_edf_plugin __cacheline_aligned_in_smp = {
 	.plugin_name		= "GSN-EDF",
 	.finish_switch		= gsnedf_finish_switch,
-	.task_new		= gsnedf_task_new,
+	.task_new		= gsnedf_task_new, // This is called in core.c, for newly created tasks only
 	.complete_job		= complete_job,
 	.task_exit		= gsnedf_task_exit,
 	.schedule		= gsnedf_schedule,
