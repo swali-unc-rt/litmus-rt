@@ -14,6 +14,7 @@ obj-y     = sched_plugin.o litmus.o \
 	    fp_common.o \
 	    fdso.o \
 	    locking.o \
+		gsnedf-fmlp.o \
 	    srp.o \
 	    bheap.o \
 	    binheap.o \

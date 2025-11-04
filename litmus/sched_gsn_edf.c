@@ -38,6 +38,8 @@
 
 #include <linux/module.h>
 
+#include <litmus/sched_gsnedf.h>
+
 /* Overview of GSN-EDF operations.
  *
  * For a detailed explanation of GSN-EDF have a look at the FMLP paper. This
@@ -103,25 +105,15 @@
  * to a linked task. This is the job of the calling function ( by means of
  * __take_ready).
  */
-
-
-/* cpu_entry_t - maintain the linked and scheduled state
- */
-typedef struct  {
-	int 			cpu;
-	struct task_struct*	linked;		/* only RT tasks */
-	struct task_struct*	scheduled;	/* only RT tasks */
-	struct bheap_node*	hn;
-} cpu_entry_t;
 DEFINE_PER_CPU(cpu_entry_t, gsnedf_cpu_entries);
 
 cpu_entry_t* gsnedf_cpus[NR_CPUS];
 
 /* the cpus queue themselves according to priority in here */
-static struct bheap_node gsnedf_heap_node[NR_CPUS];
-static struct bheap      gsnedf_cpu_heap;
+struct bheap_node gsnedf_heap_node[NR_CPUS];
+struct bheap      gsnedf_cpu_heap;
 
-static rt_domain_t gsnedf;
+rt_domain_t gsnedf;
 #define gsnedf_lock (gsnedf.ready_lock)
 
 
@@ -130,7 +122,7 @@ static rt_domain_t gsnedf;
 #define WANT_ALL_SCHED_EVENTS
  */
 
-static int cpu_lower_prio(struct bheap_node *_a, struct bheap_node *_b)
+int gsnedf_cpu_lower_prio(struct bheap_node *_a, struct bheap_node *_b)
 {
 	cpu_entry_t *a, *b;
 	a = _a->value;
@@ -147,15 +139,15 @@ static int cpu_lower_prio(struct bheap_node *_a, struct bheap_node *_b)
 static void update_cpu_position(cpu_entry_t *entry)
 {
 	if (likely(bheap_node_in_heap(entry->hn)))
-		bheap_delete(cpu_lower_prio, &gsnedf_cpu_heap, entry->hn);
-	bheap_insert(cpu_lower_prio, &gsnedf_cpu_heap, entry->hn);
+		bheap_delete(gsnedf_cpu_lower_prio, &gsnedf_cpu_heap, entry->hn);
+	bheap_insert(gsnedf_cpu_lower_prio, &gsnedf_cpu_heap, entry->hn);
 }
 
 /* caller must hold gsnedf lock */
 static cpu_entry_t* lowest_prio_cpu(void)
 {
 	struct bheap_node* hn;
-	hn = bheap_peek(cpu_lower_prio, &gsnedf_cpu_heap);
+	hn = bheap_peek(gsnedf_cpu_lower_prio, &gsnedf_cpu_heap);
 	return hn->value;
 }
 
@@ -219,7 +211,7 @@ static noinline void link_task_to_cpu(struct task_struct* linked,
 /* unlink - Make sure a task is not linked any longer to an entry
  *          where it was linked before. Must hold gsnedf_lock.
  */
-static noinline void unlink(struct task_struct* t)
+noinline void gsnedf_unlink(struct task_struct* t)
 {
 	cpu_entry_t *entry;
 
@@ -283,7 +275,7 @@ static cpu_entry_t* gsnedf_get_nearest_available_cpu(cpu_entry_t *start)
 #endif
 
 /* check for any necessary preemptions */
-static void check_for_preemptions(void)
+void gsnedf_check_for_preemptions(void)
 {
 	struct task_struct *task;
 	cpu_entry_t *last;
@@ -338,12 +330,12 @@ static void check_for_preemptions(void)
 }
 
 /* gsnedf_job_arrival: task is either resumed or released */
-static noinline void gsnedf_job_arrival(struct task_struct* task)
+noinline void gsnedf_job_arrival(struct task_struct* task)
 {
 	BUG_ON(!task);
 
 	requeue(task);
-	check_for_preemptions();
+	gsnedf_check_for_preemptions();
 }
 
 static void gsnedf_release_jobs(rt_domain_t* rt, struct bheap* tasks)
@@ -353,7 +345,7 @@ static void gsnedf_release_jobs(rt_domain_t* rt, struct bheap* tasks)
 	raw_spin_lock_irqsave(&gsnedf_lock, flags);
 
 	__merge_ready(rt, tasks);
-	check_for_preemptions();
+	gsnedf_check_for_preemptions();
 
 	raw_spin_unlock_irqrestore(&gsnedf_lock, flags);
 }
@@ -375,7 +367,7 @@ static noinline void curr_job_completion(int forced)
 	if (is_early_releasing(t) || is_released(t, litmus_clock()))
 		sched_trace_task_release(t);
 	/* unlink */
-	unlink(t);
+	gsnedf_unlink(t);
 	/* requeue
 	 * But don't requeue a blocking task. */
 	if (is_current_running())
@@ -453,7 +445,7 @@ static struct task_struct* gsnedf_schedule(struct task_struct * prev)
 	/* If a task blocks we have no choice but to reschedule.
 	 */
 	if (blocks)
-		unlink(entry->scheduled);
+		gsnedf_unlink(entry->scheduled);
 
 	/* Request a sys_exit_np() call if we would like to preempt but cannot.
 	 * We need to make sure to update the link structure anyway in case
@@ -461,7 +453,7 @@ static struct task_struct* gsnedf_schedule(struct task_struct * prev)
 	 * hurt.
 	 */
 	if (np && (out_of_time || preempt || sleep)) {
-		unlink(entry->scheduled);
+		gsnedf_unlink(entry->scheduled);
 		request_exit_np(entry->scheduled);
 	}
 
@@ -596,7 +588,7 @@ static void gsnedf_task_block(struct task_struct *t)
 
 	/* unlink if necessary */
 	raw_spin_lock_irqsave(&gsnedf_lock, flags);
-	unlink(t);
+	gsnedf_unlink(t);
 	raw_spin_unlock_irqrestore(&gsnedf_lock, flags);
 
 	BUG_ON(!is_realtime(t));
@@ -609,7 +601,7 @@ static void gsnedf_task_exit(struct task_struct * t)
 
 	/* unlink if necessary */
 	raw_spin_lock_irqsave(&gsnedf_lock, flags);
-	unlink(t);
+	gsnedf_unlink(t);
 	if (tsk_rt(t)->scheduled_on != NO_CPU) {
 		gsnedf_cpus[tsk_rt(t)->scheduled_on]->scheduled = NULL;
 		tsk_rt(t)->scheduled_on = NO_CPU;
@@ -628,308 +620,9 @@ static long gsnedf_admit_task(struct task_struct* tsk)
 
 #ifdef CONFIG_LITMUS_LOCKING
 
-#include <litmus/fdso.h>
-
-/* called with IRQs off */
-static void set_priority_inheritance(struct task_struct* t, struct task_struct* prio_inh)
-{
-	int linked_on;
-	int check_preempt = 0;
-
-	raw_spin_lock(&gsnedf_lock);
-
-	TRACE_TASK(t, "inherits priority from %s/%d\n", prio_inh->comm, prio_inh->pid);
-	tsk_rt(t)->inh_task = prio_inh;
-
-	linked_on  = tsk_rt(t)->linked_on;
-
-	/* If it is scheduled, then we need to reorder the CPU heap. */
-	if (linked_on != NO_CPU) {
-		TRACE_TASK(t, "%s: linked  on %d\n",
-			   __FUNCTION__, linked_on);
-		/* Holder is scheduled; need to re-order CPUs.
-		 * We can't use heap_decrease() here since
-		 * the cpu_heap is ordered in reverse direction, so
-		 * it is actually an increase. */
-		bheap_delete(cpu_lower_prio, &gsnedf_cpu_heap,
-			    gsnedf_cpus[linked_on]->hn);
-		bheap_insert(cpu_lower_prio, &gsnedf_cpu_heap,
-			    gsnedf_cpus[linked_on]->hn);
-	} else {
-		/* holder may be queued: first stop queue changes */
-		raw_spin_lock(&gsnedf.release_lock);
-		if (is_queued(t)) {
-			TRACE_TASK(t, "%s: is queued\n",
-				   __FUNCTION__);
-			/* We need to update the position of holder in some
-			 * heap. Note that this could be a release heap if we
-			 * budget enforcement is used and this job overran. */
-			check_preempt =
-				!bheap_decrease(edf_ready_order,
-					       tsk_rt(t)->heap_node);
-		} else {
-			/* Nothing to do: if it is not queued and not linked
-			 * then it is either sleeping or currently being moved
-			 * by other code (e.g., a timer interrupt handler) that
-			 * will use the correct priority when enqueuing the
-			 * task. */
-			TRACE_TASK(t, "%s: is NOT queued => Done.\n",
-				   __FUNCTION__);
-		}
-		raw_spin_unlock(&gsnedf.release_lock);
-
-		/* If holder was enqueued in a release heap, then the following
-		 * preemption check is pointless, but we can't easily detect
-		 * that case. If you want to fix this, then consider that
-		 * simply adding a state flag requires O(n) time to update when
-		 * releasing n tasks, which conflicts with the goal to have
-		 * O(log n) merges. */
-		if (check_preempt) {
-			/* heap_decrease() hit the top level of the heap: make
-			 * sure preemption checks get the right task, not the
-			 * potentially stale cache. */
-			bheap_uncache_min(edf_ready_order,
-					 &gsnedf.ready_queue);
-			check_for_preemptions();
-		}
-	}
-
-	raw_spin_unlock(&gsnedf_lock);
-}
-
-/* called with IRQs off */
-static void clear_priority_inheritance(struct task_struct* t)
-{
-	raw_spin_lock(&gsnedf_lock);
-
-	/* A job only stops inheriting a priority when it releases a
-	 * resource. Thus we can make the following assumption.*/
-	BUG_ON(tsk_rt(t)->scheduled_on == NO_CPU);
-
-	TRACE_TASK(t, "priority restored\n");
-	tsk_rt(t)->inh_task = NULL;
-
-	/* Check if rescheduling is necessary. We can't use heap_decrease()
-	 * since the priority was effectively lowered. */
-	unlink(t);
-	gsnedf_job_arrival(t);
-
-	raw_spin_unlock(&gsnedf_lock);
-}
-
-
-/* ******************** FMLP support ********************** */
-
-/* struct for semaphore with priority inheritance */
-struct fmlp_semaphore {
-	struct litmus_lock litmus_lock;
-
-	/* current resource holder */
-	struct task_struct *owner;
-
-	/* highest-priority waiter */
-	struct task_struct *hp_waiter;
-
-	/* FIFO queue of waiting tasks */
-	wait_queue_head_t wait;
-};
-
-static inline struct fmlp_semaphore* fmlp_from_lock(struct litmus_lock* lock)
-{
-	return container_of(lock, struct fmlp_semaphore, litmus_lock);
-}
-
-/* caller is responsible for locking */
-struct task_struct* find_hp_waiter(struct fmlp_semaphore *sem,
-				   struct task_struct* skip)
-{
-	struct list_head	*pos;
-	struct task_struct	*queued, *found = NULL;
-
-	list_for_each(pos, &sem->wait.head) {
-		queued  = (struct task_struct*) list_entry(pos,
-							   wait_queue_entry_t,
-							   entry)->private;
-
-		/* Compare task prios, find high prio task. */
-		if (queued != skip && edf_higher_prio(queued, found))
-			found = queued;
-	}
-	return found;
-}
-
-int gsnedf_fmlp_lock(struct litmus_lock* l)
-{
-	struct task_struct* t = current;
-	struct fmlp_semaphore *sem = fmlp_from_lock(l);
-	wait_queue_entry_t wait;
-	unsigned long flags;
-
-	if (!is_realtime(t))
-		return -EPERM;
-
-	/* prevent nested lock acquisition --- not supported by FMLP */
-	if (tsk_rt(t)->num_locks_held)
-		return -EBUSY;
-
-	spin_lock_irqsave(&sem->wait.lock, flags);
-
-	if (sem->owner) {
-		/* resource is not free => must suspend and wait */
-
-		init_waitqueue_entry(&wait, t);
-
-		/* FIXME: interruptible would be nice some day */
-		set_current_state(TASK_UNINTERRUPTIBLE);
-
-		__add_wait_queue_entry_tail_exclusive(&sem->wait, &wait);
-
-		/* check if we need to activate priority inheritance */
-		if (edf_higher_prio(t, sem->hp_waiter)) {
-			sem->hp_waiter = t;
-			if (edf_higher_prio(t, sem->owner))
-				set_priority_inheritance(sem->owner, sem->hp_waiter);
-		}
-
-		TS_LOCK_SUSPEND;
-
-		/* release lock before sleeping */
-		spin_unlock_irqrestore(&sem->wait.lock, flags);
-
-		/* We depend on the FIFO order.  Thus, we don't need to recheck
-		 * when we wake up; we are guaranteed to have the lock since
-		 * there is only one wake up per release.
-		 */
-
-		schedule();
-
-		TS_LOCK_RESUME;
-
-		/* Since we hold the lock, no other task will change
-		 * ->owner. We can thus check it without acquiring the spin
-		 * lock. */
-		BUG_ON(sem->owner != t);
-	} else {
-		/* it's ours now */
-		sem->owner = t;
-
-		spin_unlock_irqrestore(&sem->wait.lock, flags);
-	}
-
-	tsk_rt(t)->num_locks_held++;
-
-	return 0;
-}
-
-int gsnedf_fmlp_unlock(struct litmus_lock* l)
-{
-	struct task_struct *t = current, *next;
-	struct fmlp_semaphore *sem = fmlp_from_lock(l);
-	unsigned long flags;
-	int err = 0;
-
-	spin_lock_irqsave(&sem->wait.lock, flags);
-
-	if (sem->owner != t) {
-		err = -EINVAL;
-		goto out;
-	}
-
-	tsk_rt(t)->num_locks_held--;
-
-	/* check if there are jobs waiting for this resource */
-	next = __waitqueue_remove_first(&sem->wait);
-	if (next) {
-		/* next becomes the resouce holder */
-		sem->owner = next;
-		TRACE_CUR("lock ownership passed to %s/%d\n", next->comm, next->pid);
-
-		/* determine new hp_waiter if necessary */
-		if (next == sem->hp_waiter) {
-			TRACE_TASK(next, "was highest-prio waiter\n");
-			/* next has the highest priority --- it doesn't need to
-			 * inherit.  However, we need to make sure that the
-			 * next-highest priority in the queue is reflected in
-			 * hp_waiter. */
-			sem->hp_waiter = find_hp_waiter(sem, next);
-			if (sem->hp_waiter)
-				TRACE_TASK(sem->hp_waiter, "is new highest-prio waiter\n");
-			else
-				TRACE("no further waiters\n");
-		} else {
-			/* Well, if next is not the highest-priority waiter,
-			 * then it ought to inherit the highest-priority
-			 * waiter's priority. */
-			set_priority_inheritance(next, sem->hp_waiter);
-		}
-
-		/* wake up next */
-		wake_up_process(next);
-	} else
-		/* becomes available */
-		sem->owner = NULL;
-
-	/* we lose the benefit of priority inheritance (if any) */
-	if (tsk_rt(t)->inh_task)
-		clear_priority_inheritance(t);
-
-out:
-	spin_unlock_irqrestore(&sem->wait.lock, flags);
-
-	return err;
-}
-
-int gsnedf_fmlp_close(struct litmus_lock* l)
-{
-	struct task_struct *t = current;
-	struct fmlp_semaphore *sem = fmlp_from_lock(l);
-	unsigned long flags;
-
-	int owner;
-
-	spin_lock_irqsave(&sem->wait.lock, flags);
-
-	owner = sem->owner == t;
-
-	spin_unlock_irqrestore(&sem->wait.lock, flags);
-
-	if (owner)
-		gsnedf_fmlp_unlock(l);
-
-	return 0;
-}
-
-void gsnedf_fmlp_free(struct litmus_lock* lock)
-{
-	kfree(fmlp_from_lock(lock));
-}
-
-static struct litmus_lock_ops gsnedf_fmlp_lock_ops = {
-	.close  = gsnedf_fmlp_close,
-	.lock   = gsnedf_fmlp_lock,
-	.unlock = gsnedf_fmlp_unlock,
-	.deallocate = gsnedf_fmlp_free,
-};
-
-static struct litmus_lock* gsnedf_new_fmlp(void)
-{
-	struct fmlp_semaphore* sem;
-
-	sem = kmalloc(sizeof(*sem), GFP_KERNEL);
-	if (!sem)
-		return NULL;
-
-	sem->owner   = NULL;
-	sem->hp_waiter = NULL;
-	init_waitqueue_head(&sem->wait);
-	sem->litmus_lock.ops = &gsnedf_fmlp_lock_ops;
-
-	return &sem->litmus_lock;
-}
+#include <litmus/gsnedf-fmlp.h>
 
 /* **** lock constructor **** */
-
-
 static long gsnedf_allocate_lock(struct litmus_lock **lock, int type,
 				 void* __user unused)
 {
