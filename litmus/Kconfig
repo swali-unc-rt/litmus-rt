@@ -122,7 +122,30 @@ config LITMUS_LOCKING_OMLP
 	  tasks share many resources.
 
 	  Say Yes if you want to use the OMLP protocol.
-	  Say No if you want to use other protocols such as the FMLP or Baker's SRP.
+	  Say No if you want to use other protocols.
+
+config LITMUS_LOCKING_WITHARGS
+		bool "Locking protocols with arguments"
+	depends on LITMUS_LOCKING
+	default y
+	help
+	  Enable locking protocols that require additional arguments when
+	  acquiring and releasing locks (e.g., k-exclusion, SMLP).
+
+	  Say Yes if you want to use such locking protocols.
+	  Say No if you want to use simpler protocols (e.g., FMLP, OMLP, SRP).
+
+config LITMUS_LOCKING_SMLP
+		bool "SMLP (Streaming Multiprocessor Locking Protocol) support"
+	depends on LITMUS_LOCKING_WITHARGS
+	default y
+	help
+	  Enable the SMLP (Streaming Multiprocessor) real-time locking
+	  protocol. The SMLP provides enables parallel access to GPU TPCs
+	  via libsmctrl.
+
+	  Say Yes if you want to use the SMLP protocol.
+	  Say No if you want to use other protocols.
 
 endmenu
 

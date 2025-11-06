@@ -211,6 +211,9 @@ static struct litmus_lock_ops gsnedf_fmlp_lock_ops = {
 	.lock   = gsnedf_fmlp_lock,
 	.unlock = gsnedf_fmlp_unlock,
 	.deallocate = gsnedf_fmlp_free,
+#ifdef CONFIG_LITMUS_LOCKING_WITHARGS
+	.lock_arg = NULL,
+#endif
 };
 
 struct litmus_lock* gsnedf_new_fmlp(void) {

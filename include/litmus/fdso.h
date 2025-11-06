@@ -14,25 +14,25 @@
 
 #define MAX_OBJECT_DESCRIPTORS 85
 
+// First semaphore must start with zero
 typedef enum  {
-	MIN_OBJ_TYPE 	= 0,
-
 	FMLP_SEM	= 0,
-	SRP_SEM		= 1,
+	SRP_SEM,
 
-	MPCP_SEM	= 2,
-	MPCP_VS_SEM	= 3,
-	DPCP_SEM	= 4,
-	PCP_SEM         = 5,
+	MPCP_SEM,
+	MPCP_VS_SEM,
+	DPCP_SEM,
+	PCP_SEM,
 
-	DFLP_SEM	= 6,
+	DFLP_SEM,
 
 #ifdef CONFIG_LITMUS_LOCKING_OMLP
-	OMLP_SEM = 7,
+	OMLP_SEM,
 #endif
-
-	// This must be manually updated
-	MAX_OBJ_TYPE	= 7
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	SMLP_SEM,
+#endif
+	MAX_OBJ_TYPE,
 } obj_type_t;
 
 struct inode_obj_id {

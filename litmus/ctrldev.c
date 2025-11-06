@@ -134,6 +134,10 @@ asmlinkage long sys_wait_for_job_release(unsigned int job);
 asmlinkage long sys_wait_for_ts_release(void);
 asmlinkage long sys_release_ts(lt_t __user *__when);
 
+#ifdef CONFIG_LITMUS_LOCKING_WITHARGS
+asmlinkage long sys_litmus_lock_arg(int lock_od, void* __user arg);
+#endif
+
 static long litmus_ctrl_ioctl(struct file *filp,
 	unsigned int cmd, unsigned long arg)
 {
@@ -154,6 +158,9 @@ static long litmus_ctrl_ioctl(struct file *filp,
 	case LRT_reservation_create:
 	case LRT_get_current_budget:
 	case LRT_od_open:
+#ifdef LITMUS_LOCKING_WITHARGS
+	case LRT_litmus_lock_arg:
+#endif
 		/* multiple arguments => need to get args via pointer */
 		/* get syscall parameters */
 		if (copy_from_user(&syscall_args, (void*) arg,
@@ -184,6 +191,11 @@ static long litmus_ctrl_ioctl(struct file *filp,
 				syscall_args.od_open.obj_type,
 				syscall_args.od_open.obj_id,
 				syscall_args.od_open.config);
+#ifdef CONFIG_LITMUS_LOCKING_WITHARGS
+		case LRT_litmus_lock_arg:
+			return sys_litmus_lock_arg(syscall_args.lock_arg.lock_od,
+						   syscall_args.lock_arg.arg);
+#endif
 		default:
 			printk(KERN_DEBUG "ctrldev: strange od_open cmd: %d\n", cmd);
 			return -EINVAL;

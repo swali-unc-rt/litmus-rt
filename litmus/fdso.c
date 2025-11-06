@@ -31,11 +31,14 @@ static const struct fdso_ops* fdso_ops[] = {
 #ifdef CONFIG_LITMUS_LOCKING_OMLP
 	&generic_lock_ops, /* OMLP_SEM */
 #endif
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	&generic_lock_ops, /* SMLP_SEM */
+#endif
 };
 
 static int fdso_create(void** obj_ref, obj_type_t type, void* __user config)
 {
-	BUILD_BUG_ON(ARRAY_SIZE(fdso_ops) != MAX_OBJ_TYPE + 1);
+	BUILD_BUG_ON(ARRAY_SIZE(fdso_ops) != MAX_OBJ_TYPE);
 
 	if (fdso_ops[type]->create)
 		return fdso_ops[type]->create(obj_ref, type, config);
@@ -273,7 +276,7 @@ asmlinkage long sys_od_open(int fd, int type, int obj_id, void* __user config)
 	   8) return offset in od_table as OD
 	 */
 
-	if (type < MIN_OBJ_TYPE || type > MAX_OBJ_TYPE) {
+	if (type < 0 || type > MAX_OBJ_TYPE) {
 		ret = -EINVAL;
 		goto out;
 	}

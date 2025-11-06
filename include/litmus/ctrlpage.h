@@ -46,6 +46,13 @@ struct control_page {
 	uint64_t job_index; /* Job sequence number of current job */
 
 	/* to be extended */
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	// This is a fallback when calling litmus_lock without an argument.
+	// The task is assumed to only want to lock one SM, and the mask
+	// is returned in this control page variable, whereas normally
+	// the mask will be filled in to the argument passed by the user.
+	uint64_t smlp_assigned_mask;
+#endif
 };
 
 /* Expected offsets within the control page. */
@@ -74,6 +81,9 @@ typedef enum {
 	LRT_wait_for_ts_release,
 	LRT_release_ts,
 	LRT_get_current_budget,
+#ifdef CONFIG_LITMUS_LOCKING_WITHARGS
+	LRT_litmus_lock_arg,
+#endif
 } litmus_syscall_id_t;
 
 union litmus_syscall_args {
@@ -98,6 +108,13 @@ union litmus_syscall_args {
 		lt_t __user *expended;
 		lt_t __user *remaining;
 	} get_current_budget;
+
+#ifdef CONFIG_LITMUS_LOCKING_WITHARGS
+	struct {
+		int lock_od;
+		void __user *arg;
+	} lock_arg;
+#endif
 };
 
 

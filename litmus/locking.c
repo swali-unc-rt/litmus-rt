@@ -97,6 +97,40 @@ asmlinkage long sys_litmus_lock(int lock_od)
 	return err;
 }
 
+#ifdef CONFIG_LITMUS_LOCKING_WITHARGS
+asmlinkage long sys_litmus_lock_arg(int lock_od, void* __user arg)
+{
+	long err = -EINVAL;
+	struct od_table_entry* entry;
+	struct litmus_lock* l;
+
+	TS_SYSCALL_IN_START;
+
+	TS_SYSCALL_IN_END;
+
+	TS_LOCK_START;
+
+	entry = get_entry_for_od(lock_od);
+	if (entry && is_lock(entry)) {
+		l = get_lock(entry);
+		if (l->ops->lock_arg) {
+			TRACE_CUR("attempts to lock 0x%p with arg\n", l);
+			err = l->ops->lock_arg(l, arg);
+		} else {
+			err = -ENOSYS;
+		}
+	}
+
+	/* Note: task my have been suspended or preempted in between!  Take
+	 * this into account when computing overheads. */
+	TS_LOCK_END;
+
+	TS_SYSCALL_OUT_START;
+
+	return err;
+}
+#endif
+
 asmlinkage long sys_litmus_unlock(int lock_od)
 {
 	long err = -EINVAL;
@@ -135,6 +169,18 @@ struct task_struct* __waitqueue_remove_first(wait_queue_head_t *wq)
 			       wait_queue_entry_t, entry);
 		t = (struct task_struct*) q->private;
 		__remove_wait_queue(wq, q);
+	}
+	return(t);
+}
+
+struct task_struct* __waitqueue_peek_first(wait_queue_head_t *wq) {
+	wait_queue_entry_t* q;
+	struct task_struct* t = NULL;
+
+	if (waitqueue_active(wq)) {
+		q = list_entry(wq->head.next,
+			       wait_queue_entry_t, entry);
+		t = (struct task_struct*) q->private;
 	}
 	return(t);
 }

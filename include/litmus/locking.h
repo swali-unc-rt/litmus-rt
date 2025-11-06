@@ -21,6 +21,11 @@ struct litmus_lock_ops {
 	int (*lock)(struct litmus_lock*);
 	int (*unlock)(struct litmus_lock*);
 
+#ifdef CONFIG_LITMUS_LOCKING_WITHARGS
+	// Tries to lock with an argument (optional method)
+	int (*lock_arg)(struct litmus_lock*, void* __user);
+#endif
+
 	/* The lock is no longer being referenced (mandatory method). */
 	void (*deallocate)(struct litmus_lock*);
 };

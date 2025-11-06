@@ -110,7 +110,7 @@ int gsnedf_omlp_lock(struct litmus_lock* l) {
 		/* FIXME: interruptible would be nice some day */
 		set_current_state(TASK_UNINTERRUPTIBLE);
 
-		if( sem->fqsize >= NR_CPUS ) {
+		if( sem->fqsize >= num_online_cpus() ) {
 			// We need to go to the PQ
 			bheap_insert(gsnedf.order, &sem->pq, tsk_rt(t)->omlp_heap_node);
 		} else {
@@ -128,6 +128,9 @@ int gsnedf_omlp_lock(struct litmus_lock* l) {
 
 		// Timestamp for suspending to wait on the lock
 		TS_LOCK_SUSPEND;
+
+		/* release lock before sleeping */
+		spin_unlock_irqrestore(&sem->fq.lock, flags);
 
 		// When schedule is called like this, we are deactivated, and only
 		// the unlock function can wake us
@@ -240,6 +243,9 @@ static struct litmus_lock_ops gsnedf_omlp_lock_ops = {
 	.lock   = gsnedf_omlp_lock,
 	.unlock = gsnedf_omlp_unlock,
 	.deallocate = gsnedf_omlp_free,
+#ifdef CONFIG_LITMUS_LOCKING_WITHARGS
+	.lock_arg = NULL,
+#endif
 };
 
 struct litmus_lock* gsnedf_new_omlp(void) {
