@@ -43,6 +43,9 @@
 #ifdef CONFIG_LITMUS_LOCKING_OMLP
 #include <litmus/gsnedf-omlp.h>
 #endif
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+#include <litmus/gsnedf-smlp.h>
+#endif
 
 /* Overview of GSN-EDF operations.
  *
@@ -339,6 +342,11 @@ noinline void gsnedf_job_arrival(struct task_struct* task)
 	BUG_ON(!task);
 
 	requeue(task);
+	
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	gsnedf_smlp_on_task_arrival(task);
+#endif
+
 	gsnedf_check_for_preemptions();
 }
 
@@ -613,6 +621,9 @@ static void gsnedf_task_exit(struct task_struct * t)
 #ifdef CONFIG_LITMUS_LOCKING_OMLP
 	gsnedf_omlp_on_exit_task(t);
 #endif
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	gsnedf_smlp_on_exit_task(t);
+#endif
 	raw_spin_unlock_irqrestore(&gsnedf_lock, flags);
 
 	BUG_ON(!is_realtime(t));
@@ -627,6 +638,10 @@ static long gsnedf_admit_task(struct task_struct* tsk)
 	rv = gsnedf_omlp_on_admit_task(tsk);
 	if( rv ) return rv;
 #endif
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	rv = gsnedf_smlp_on_admit_task(tsk);
+	if( rv ) return rv;
+#endif
 	return rv;
 }
 
@@ -634,12 +649,9 @@ static long gsnedf_admit_task(struct task_struct* tsk)
 
 #include <litmus/gsnedf-fmlp.h>
 
-/* called with IRQs off */
-void gsnedf_set_priority_inheritance(struct task_struct* t, struct task_struct* prio_inh) {
+void gsnedf_set_priority_inheritance_nogsnedflock(struct task_struct *t, struct task_struct *prio_inh) {
 	int linked_on;
 	int check_preempt = 0;
-
-	raw_spin_lock(&gsnedf_lock);
 
 	TRACE_TASK(t, "inherits priority from %s/%d\n", prio_inh->comm, prio_inh->pid);
 	tsk_rt(t)->inh_task = prio_inh;
@@ -696,14 +708,16 @@ void gsnedf_set_priority_inheritance(struct task_struct* t, struct task_struct* 
 			gsnedf_check_for_preemptions();
 		}
 	}
-
-	raw_spin_unlock(&gsnedf_lock);
 }
 
 /* called with IRQs off */
-void gsnedf_clear_priority_inheritance(struct task_struct* t) {
+void gsnedf_set_priority_inheritance(struct task_struct* t, struct task_struct* prio_inh) {
 	raw_spin_lock(&gsnedf_lock);
+	gsnedf_set_priority_inheritance_nogsnedflock(t, prio_inh);
+	raw_spin_unlock(&gsnedf_lock);
+}
 
+void gsnedf_clear_priority_inheritance_nogsnedflock(struct task_struct* t) {
 	/* A job only stops inheriting a priority when it releases a
 	 * resource. Thus we can make the following assumption.*/
 	BUG_ON(tsk_rt(t)->scheduled_on == NO_CPU);
@@ -715,13 +729,18 @@ void gsnedf_clear_priority_inheritance(struct task_struct* t) {
 	 * since the priority was effectively lowered. */
 	gsnedf_unlink(t);
 	gsnedf_job_arrival(t);
+}
 
+/* called with IRQs off */
+void gsnedf_clear_priority_inheritance(struct task_struct* t) {
+	raw_spin_lock(&gsnedf_lock);
+	gsnedf_clear_priority_inheritance_nogsnedflock(t);
 	raw_spin_unlock(&gsnedf_lock);
 }
 
 /* **** lock constructor **** */
 static long gsnedf_allocate_lock(struct litmus_lock **lock, int type,
-				 void* __user unused)
+				 void* __user args)
 {
 	int err = -ENXIO;
 
@@ -740,6 +759,14 @@ static long gsnedf_allocate_lock(struct litmus_lock **lock, int type,
 	case OMLP_SEM:
 		/* OMLP for GSN-EDF */
 		*lock = gsnedf_new_omlp();
+		if (*lock) err = 0;
+		else err = -ENOMEM;
+		break;
+#endif
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	case SMLP_SEM:
+		/* SMLP for GSN-EDF */
+		*lock = gsnedf_new_smlp(args);
 		if (*lock) err = 0;
 		else err = -ENOMEM;
 		break;

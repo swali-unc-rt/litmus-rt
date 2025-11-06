@@ -23,6 +23,10 @@ noinline void gsnedf_unlink(struct task_struct* t);
 #ifdef CONFIG_LITMUS_LOCKING
 void gsnedf_set_priority_inheritance(struct task_struct* t, struct task_struct* prio_inh);
 void gsnedf_clear_priority_inheritance(struct task_struct* t);
+
+// won't lock the gsnedf lock
+void gsnedf_set_priority_inheritance_nogsnedflock(struct task_struct *t, struct task_struct *prio_inh);
+void gsnedf_clear_priority_inheritance_nogsnedflock(struct task_struct* t);
 #endif
 
 #endif

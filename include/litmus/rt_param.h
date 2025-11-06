@@ -195,6 +195,14 @@ struct rt_param {
 	struct bheap_node* omlp_heap_node;
 	wait_queue_entry_t omlp_fq_node;
 #endif
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	struct bheap_node* smlp_pq_node;
+	wait_queue_entry_t smlp_fq_node;
+	wait_queue_entry_t smlp_sq_node;
+	wait_queue_entry_t smlp_piq_node;
+	uint64_t smlp_assigned_mask;
+	void* smlp_lock_arg;
+#endif
 #endif
 
 	/* user controlled parameters */
