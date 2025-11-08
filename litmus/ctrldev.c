@@ -136,6 +136,9 @@ asmlinkage long sys_release_ts(lt_t __user *__when);
 
 #ifdef CONFIG_LITMUS_LOCKING_WITHARGS
 asmlinkage long sys_litmus_lock_arg(int lock_od, void* __user arg);
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+asmlinkage long sys_smlp_gpu_done(int lock_od);
+#endif
 #endif
 
 static long litmus_ctrl_ioctl(struct file *filp,
@@ -216,6 +219,11 @@ static long litmus_ctrl_ioctl(struct file *filp,
 
 	case LRT_litmus_unlock:
 		return sys_litmus_unlock(arg);
+
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	case LRT_smlp_gpu_done:
+		return sys_smlp_gpu_done(arg);
+#endif
 
 	case LRT_wait_for_job_release:
 		return sys_wait_for_job_release(arg);

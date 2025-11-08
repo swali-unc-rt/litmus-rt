@@ -16,6 +16,7 @@
 
 // From gsnedf
 extern rt_domain_t gsnedf;
+#define gsnedf_lock (gsnedf.ready_lock)
 
 /* -=-=-=-=- SMLP support -=-=-=-=- */
 long gsnedf_smlp_on_admit_task(struct task_struct * tsk) {
@@ -61,28 +62,25 @@ struct smlp_semaphore {
     // Mask to assign
     // If bit n is set, then TPC n is up for grabs
     uint64_t mask;
+
+	// If this is set, then LRT_smlp_gpu_done needs to be called before moving to the PIQ
+	int explicit_gpu_finish;
 };
 
 static inline struct smlp_semaphore* smlp_from_lock(struct litmus_lock* lock) {
 	return container_of(lock, struct smlp_semaphore, litmus_lock);
 }
 
-// If a suspended SMLP task re-arrives, then it is put in the PIQ
-// and allowed to call its unlock function. Can assume the GPU segment is over.
-void gsnedf_smlp_on_task_arrival(struct task_struct * tsk) {
+int __gsnedf_smlp_on_gpu_done(struct litmus_lock *l) {
 	struct smlp_semaphore *sem;
-	struct task_struct *firstpiq;
+	struct task_struct *firstpiq, *tsk = current;
 	unsigned long flags;
 
 	// Cannot do a lock op if we aren't a real-time task
 	if (!is_realtime(tsk))
-		return;
+		return -EPERM;
 
-	// Is the task waiting on an SMLP semaphore?
-	if( !tsk_rt(tsk)->smlp_lock_arg )
-		return;
-
-	sem = smlp_from_lock( (struct litmus_lock*) tsk_rt(tsk)->smlp_lock_arg );
+	sem = smlp_from_lock( l );
 
 	// Grab the FQ lock
 	spin_lock_irqsave(&sem->fq.lock, flags);
@@ -106,6 +104,50 @@ void gsnedf_smlp_on_task_arrival(struct task_struct * tsk) {
 	}
 
 	spin_unlock_irqrestore(&sem->fq.lock, flags);
+	return 0;
+}
+
+int gsnedf_smlp_on_gpu_done(struct litmus_lock *l) {
+	struct task_struct* tsk = current;
+	struct smlp_semaphore *sem;
+	int rv;
+
+	// Cannot do a lock op if we aren't a real-time task
+	if (!is_realtime(tsk))
+		return -EPERM;
+
+	sem = smlp_from_lock(l);
+
+	// User should only be calling this if explicit marking the gpu as done was specified
+	if( sem->explicit_gpu_finish ) {
+		raw_spin_lock(&gsnedf_lock);
+		rv = __gsnedf_smlp_on_gpu_done(&sem->litmus_lock);
+		raw_spin_unlock(&gsnedf_lock);
+		return rv;
+	}
+
+	return -EINVAL;
+}
+
+// If a suspended SMLP task re-arrives, then it is put in the PIQ
+// and allowed to call its unlock function. Can assume the GPU segment is over.
+void gsnedf_smlp_on_task_arrival(struct task_struct * tsk) {
+	struct smlp_semaphore *sem;
+
+	// Cannot do a lock op if we aren't a real-time task
+	if (!is_realtime(tsk))
+		return;
+
+	// Can we not retrieve the litmus_lock? (task might not be related to SMLP)
+	if( !tsk_rt(tsk)->smlp_lock_arg )
+		return;
+
+	sem = smlp_from_lock( (struct litmus_lock*) tsk_rt(tsk)->smlp_lock_arg );
+
+	// If we don't need an explicit finish, we can assume task arrivals means move to PIQ
+	if( !sem->explicit_gpu_finish ) {
+		__gsnedf_smlp_on_gpu_done(&sem->litmus_lock);
+	}
 }
 
 // Caller is responsible for holding a lock to sem->fq.lock
@@ -131,8 +173,18 @@ struct task_struct* smlp_find_hp_waiter(struct smlp_semaphore *sem, struct task_
 	topnode = bheap_peek(gsnedf.order, &sem->pq);
 	if( topnode ) {
 		struct task_struct *top_pq = bheap2task(topnode);
-		if( top_pq != skip && edf_higher_prio(top_pq, found) )
-			found = top_pq;
+		if( top_pq != skip ) {
+			if( edf_higher_prio(top_pq, found))
+				found = top_pq;
+		} else {
+			// Check second highest in the PQ here if top_pq is skip
+			// struct task_struct *second_pq = NULL;
+			// if( topnode->next ) {
+			// 	second_pq = bheap2task(topnode->next);
+			// 	if( second_pq != skip && edf_higher_prio(second_pq, found) )
+			// 		found = second_pq;
+			// }
+		}
 	}
 
     // Lastly check the SQ
@@ -479,7 +531,8 @@ struct litmus_lock* gsnedf_new_smlp(void* __user config) {
     init_waitqueue_head(&sem->sq);
     init_waitqueue_head(&sem->piq);
 
-	sem->litmus_lock.ops = &gsnedf_smlp_lock_ops;
     sem->mask = init_config.init_mask;
+	sem->explicit_gpu_finish = init_config.explicit_gpu_finish;
+	sem->litmus_lock.ops = &gsnedf_smlp_lock_ops;
 	return &sem->litmus_lock;
 }

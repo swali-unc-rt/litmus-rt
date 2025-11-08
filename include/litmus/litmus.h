@@ -7,6 +7,7 @@
 #define _LINUX_LITMUS_H_
 
 #include <litmus/ctrlpage.h>
+#include <linux/types.h>
 
 #ifdef CONFIG_RELEASE_MASTER
 extern atomic_t release_master_cpu;

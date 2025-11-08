@@ -129,6 +129,32 @@ asmlinkage long sys_litmus_lock_arg(int lock_od, void* __user arg)
 
 	return err;
 }
+
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+
+#include <litmus/gsnedf-smlp.h>
+
+asmlinkage long sys_smlp_gpu_done(int lock_od)
+{
+	long err = -EINVAL;
+	struct od_table_entry* entry;
+	struct litmus_lock* l;
+
+	TS_SYSCALL_IN_START;
+
+	TS_SYSCALL_IN_END;
+
+	entry = get_entry_for_od(lock_od);
+	if (entry && is_lock(entry)) {
+		l = get_lock(entry);
+		err = gsnedf_smlp_on_gpu_done(l);
+	}
+
+	TS_SYSCALL_OUT_START;
+
+	return err;
+}
+#endif
 #endif
 
 asmlinkage long sys_litmus_unlock(int lock_od)

@@ -5,6 +5,8 @@
 #ifndef _LINUX_RT_PARAM_H_
 #define _LINUX_RT_PARAM_H_
 
+#include <linux/wait.h>
+
 /* Litmus time type. */
 typedef unsigned long long lt_t;
 

@@ -83,6 +83,9 @@ typedef enum {
 	LRT_get_current_budget,
 #ifdef CONFIG_LITMUS_LOCKING_WITHARGS
 	LRT_litmus_lock_arg,
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	LRT_smlp_gpu_done,
+#endif
 #endif
 } litmus_syscall_id_t;
 

@@ -7,6 +7,9 @@
 
 #include <litmus/bheap.h>
 
+#include <linux/spinlock_types.h>
+#include <linux/types.h>
+
 #define RELEASE_QUEUE_SLOTS 127 /* prime */
 
 struct _rt_domain;
