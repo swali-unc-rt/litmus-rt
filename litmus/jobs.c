@@ -3,11 +3,11 @@
 
 #include <linux/sched.h>
 
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/debug_trace.h>
 #include <litmus/preempt.h>
 #include <litmus/litmus.h>
-#include <litmus/sched_plugin.h>
-#include <litmus/sched_trace.h>
+#include <litmus/sched/sched_plugin.h>
+#include <litmus/tracing/sched_trace.h>
 #include <litmus/jobs.h>
 
 static inline void setup_release(struct task_struct *t, lt_t release)

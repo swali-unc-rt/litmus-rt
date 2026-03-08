@@ -1,7 +1,7 @@
 #include <linux/sched.h>
 
 #include <litmus/litmus.h>
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/debug_trace.h>
 #include <litmus/reservations/reservation.h>
 
 void reservation_init(struct reservation *res)

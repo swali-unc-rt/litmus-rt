@@ -5,7 +5,7 @@
  * page
  */
 #if defined(CONFIG_NP_SECTION) || defined(CONFIG_SCHED_DEBUG_TRACE)
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/debug_trace.h>
 #endif
 
 #ifdef CONFIG_NP_SECTION

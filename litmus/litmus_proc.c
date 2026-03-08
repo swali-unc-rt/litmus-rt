@@ -7,7 +7,7 @@
 #include <linux/uaccess.h>
 #include <linux/seq_file.h>
 
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/debug_trace.h>
 #include <litmus/litmus.h>
 #include <litmus/litmus_proc.h>
 

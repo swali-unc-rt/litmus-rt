@@ -74,7 +74,7 @@ EXPORT_SYMBOL(ignore_console_lock_warning);
 /*
  * divert printk() messages when there is a LITMUS^RT debug listener
  */
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/debug_trace.h>
 int trace_override = 0;
 int trace_recurse  = 0;
 

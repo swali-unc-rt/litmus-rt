@@ -105,7 +105,7 @@
 #include <trace/events/sched.h>
 
 #include <litmus/litmus.h>
-#include <litmus/sched_plugin.h>
+#include <litmus/sched/sched_plugin.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/task.h>

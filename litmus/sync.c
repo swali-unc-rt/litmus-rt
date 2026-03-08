@@ -11,11 +11,11 @@
 #include <linux/uaccess.h>
 
 #include <litmus/litmus.h>
-#include <litmus/sched_plugin.h>
+#include <litmus/sched/sched_plugin.h>
 #include <litmus/jobs.h>
 
-#include <litmus/sched_trace.h>
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/sched_trace.h>
+#include <litmus/tracing/debug_trace.h>
 
 struct ts_release_wait {
 	struct list_head list;

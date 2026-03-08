@@ -1,4 +1,4 @@
-#include <litmus/sched_plugin.h>
+#include <litmus/sched/sched_plugin.h>
 #include <linux/proc_fs.h>
 
 int __init init_litmus_proc(void);

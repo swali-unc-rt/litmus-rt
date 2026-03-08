@@ -6,7 +6,7 @@
 #include <linux/percpu.h>
 #include <asm/atomic.h>
 
-#include <litmus/debug_trace_common.h>
+#include <litmus/tracing/debug_trace_common.h>
 
 DECLARE_PER_CPU(bool, litmus_preemption_in_progress);
 

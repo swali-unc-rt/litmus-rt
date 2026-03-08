@@ -1,9 +1,9 @@
 #include <linux/sched.h>
 
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/debug_trace.h>
 #include <litmus/litmus.h>
 #include <litmus/preempt.h>
-#include <litmus/trace.h>
+#include <litmus/tracing/trace.h>
 
 DEFINE_PER_CPU(bool, litmus_preemption_in_progress);
 

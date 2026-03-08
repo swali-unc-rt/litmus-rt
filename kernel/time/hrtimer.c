@@ -42,8 +42,8 @@
 #include <linux/freezer.h>
 #include <linux/compat.h>
 
-#include <litmus/debug_trace.h>
-#include <litmus/trace.h>
+#include <litmus/tracing/debug_trace.h>
+#include <litmus/tracing/trace.h>
 
 #include <linux/uaccess.h>
 

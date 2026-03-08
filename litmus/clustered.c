@@ -3,7 +3,7 @@
 #include <linux/list.h>
 #include <linux/cacheinfo.h>
 
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/debug_trace.h>
 #include <litmus/clustered.h>
 
 int get_shared_cpu_map(cpumask_var_t mask, unsigned int cpu, unsigned int index)

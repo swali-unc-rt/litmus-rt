@@ -1,6 +1,6 @@
 #include <linux/sched.h>
 
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/debug_trace.h>
 #include <litmus/litmus.h>
 #include <litmus/reservations/reservation.h>
 #include <litmus/reservations/polling.h>

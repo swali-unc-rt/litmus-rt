@@ -5,7 +5,7 @@
 #ifndef __UNC_RT_DOMAIN_H__
 #define __UNC_RT_DOMAIN_H__
 
-#include <litmus/bheap.h>
+#include <litmus/common/bheap.h>
 
 #include <linux/spinlock_types.h>
 #include <linux/types.h>

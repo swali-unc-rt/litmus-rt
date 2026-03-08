@@ -3,7 +3,7 @@
 #include <asm/cacheflush.h>
 #include <asm/sections.h>
 
-#include <litmus/feather_trace.h>
+#include <litmus/tracing/feather_trace.h>
 
 /* the feather trace management functions assume
  * exclusive access to the event table

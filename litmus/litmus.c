@@ -17,13 +17,13 @@
 #include <linux/uaccess.h>
 #include <uapi/linux/sched/types.h>
 
-#include <litmus/debug_trace.h>
+#include <litmus/tracing/debug_trace.h>
 #include <litmus/litmus.h>
-#include <litmus/bheap.h>
-#include <litmus/trace.h>
+#include <litmus/common/bheap.h>
+#include <litmus/tracing/trace.h>
 #include <litmus/rt_domain.h>
 #include <litmus/litmus_proc.h>
-#include <litmus/sched_trace.h>
+#include <litmus/tracing/sched_trace.h>
 
 #ifdef CONFIG_SCHED_CPU_AFFINITY
 #include <litmus/affinity.h>

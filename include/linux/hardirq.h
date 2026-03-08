@@ -8,7 +8,7 @@
 #include <linux/vtime.h>
 #include <asm/hardirq.h>
 
-#include <litmus/trace_irq.h>
+#include <litmus/tracing/trace_irq.h>
 
 extern void synchronize_irq(unsigned int irq);
 extern bool synchronize_hardirq(unsigned int irq);
