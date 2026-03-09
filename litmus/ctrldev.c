@@ -161,7 +161,7 @@ static long litmus_ctrl_ioctl(struct file *filp,
 	case LRT_reservation_create:
 	case LRT_get_current_budget:
 	case LRT_od_open:
-#ifdef LITMUS_LOCKING_WITHARGS
+#ifdef CONFIG_LITMUS_LOCKING_WITHARGS
 	case LRT_litmus_lock_arg:
 #endif
 		/* multiple arguments => need to get args via pointer */

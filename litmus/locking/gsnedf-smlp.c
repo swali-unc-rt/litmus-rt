@@ -1,11 +1,13 @@
+#include <linux/sched.h>
+#include <linux/sched/signal.h>
+#include <linux/sched/topology.h>
+#include <linux/slab.h>
+#include <linux/types.h>
+
 #include <litmus/fdso.h>
 #include <litmus/litmus.h>
 #include <litmus/rt_domain.h>
 #include <litmus/sched/edf_common.h>
-
-#include <linux/sched/signal.h>
-#include <linux/sched/topology.h>
-#include <linux/slab.h>
 
 #include <litmus/tracing/sched_trace.h>
 #include <litmus/tracing/trace.h>
@@ -32,12 +34,14 @@ long gsnedf_smlp_on_admit_task(struct task_struct * tsk) {
 	tsk_rt(tsk)->smlp_lock_arg = NULL;
 	tsk_rt(tsk)->smlp_piq_node.entry.next = NULL;
 	tsk_rt(tsk)->smlp_piq_node.entry.prev = NULL;
+	TRACE_TASK(tsk,"admitted with SMLP support\n");
 	return 0;
 }
 
 void gsnedf_smlp_on_exit_task(struct task_struct * tsk) {
 	BUG_ON(bheap_node_in_heap(tsk_rt(tsk)->smlp_pq_node));
 	bheap_node_free(tsk_rt(tsk)->smlp_pq_node);
+	TRACE_TASK(tsk, "exited with SMLP support\n");
 }
 
 struct smlp_semaphore {
@@ -88,9 +92,11 @@ int __gsnedf_smlp_on_gpu_done(struct litmus_lock *l) {
 	// Remove ourselves from the SQ
 	list_del(&tsk_rt(tsk)->smlp_sq_node.entry);
 
+	TRACE_TASK(tsk, "GPU segment done, moved out of SQ\n");
+
 	// Add ourselves to the PIQ so we can finalize via unlock.
 	// Check first to make sure we're not already in there (can happen
-	// if suspended multiple times before completing)
+	// if suspended/resuming multiple times before completing)
 	if( tsk_rt(tsk)->smlp_piq_node.entry.next == NULL &&
 	    tsk_rt(tsk)->smlp_piq_node.entry.prev == NULL ) {
 		init_waitqueue_entry(&tsk_rt(tsk)->smlp_piq_node, tsk);
@@ -119,14 +125,15 @@ int gsnedf_smlp_on_gpu_done(struct litmus_lock *l) {
 	sem = smlp_from_lock(l);
 
 	// User should only be calling this if explicit marking the gpu as done was specified
-	if( sem->explicit_gpu_finish ) {
-		raw_spin_lock(&gsnedf_lock);
-		rv = __gsnedf_smlp_on_gpu_done(&sem->litmus_lock);
-		raw_spin_unlock(&gsnedf_lock);
-		return rv;
-	}
-
-	return -EINVAL;
+	if( !sem->explicit_gpu_finish )
+		return -EINVAL;
+	
+	TRACE_TASK(tsk, "marking GPU segment as done via system call\n");
+	
+	raw_spin_lock(&gsnedf_lock);
+	rv = __gsnedf_smlp_on_gpu_done(&sem->litmus_lock);
+	raw_spin_unlock(&gsnedf_lock);
+	return rv;
 }
 
 // If a suspended SMLP task re-arrives, then it is put in the PIQ
@@ -146,6 +153,7 @@ void gsnedf_smlp_on_task_arrival(struct task_struct * tsk) {
 
 	// If we don't need an explicit finish, we can assume task arrivals means move to PIQ
 	if( !sem->explicit_gpu_finish ) {
+		TRACE_TASK( tsk, "task arrival while suspended, moving to PIQ automatically.\n" );
 		__gsnedf_smlp_on_gpu_done(&sem->litmus_lock);
 	}
 }
@@ -222,13 +230,20 @@ int popcountll(uint64_t x) {
 
 static uint64_t get_smlp_mask(uint64_t current_mask, uint64_t allowed_tpc_bits) {
 	// assign mask to this request, first, how many SMs are available?
-	int tpcsToUse = popcountll(current_mask);
+	//int tpcsToUse = popcountll(current_mask);
+	int tpcsToUse_initial = popcountll(current_mask);
 	uint64_t assigned_mask = 0;
-	int i, tpc;
+	int i, tpc, tpcsToUse;
+
+	TRACE_CUR("current mask %lx allowed_tpc_bits %lx, # of usable TPCs %d\n", current_mask, allowed_tpc_bits, tpcsToUse_initial);
 
 	// Can this request take this many TPCs?
+	tpcsToUse = tpcsToUse_initial;
 	while( !(allowed_tpc_bits & (1ULL << (tpcsToUse-1))) )
 		tpcsToUse--;
+
+	if( tpcsToUse != tpcsToUse_initial )
+		TRACE_CUR("request can only use %d TPCs, adjusting from %d\n", tpcsToUse, tpcsToUse_initial);
 
 	// Do the assignment of TPCs
 	assigned_mask = 0;
@@ -250,6 +265,8 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 	// Cannot do a lock op if we aren't a real-time task
 	if (!is_realtime(t))
 		return -EPERM;
+	
+	tsk_rt(t)->smlp_assigned_mask = 0;
 
 	// Nested lock acquisition is not allowed because each task has a heap node, and
 	// each node would need to be tracked per lock held. Currently, tasks only have one
@@ -258,8 +275,11 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 		return -EBUSY;
 
 	// Note, the first bit has to be set. The SMLP requires being able to lock at least one TPC.
-	if( !(lock_arg->allowed_tpc_bits & 0x1) )
+	if( !(lock_arg->allowed_tpc_bits & 0x1) ) {
+		TRACE_TASK(t, "invalid SMLP lock arg %lx at least one TPC must be allowed\n", lock_arg->allowed_tpc_bits);
 		return -EINVAL;
+	}
+	TRACE_TASK(t, "smlp lock arg %lx\n", lock_arg->allowed_tpc_bits);
 
 	// Grab the FQ lock
 	spin_lock_irqsave(&sem->fq.lock, flags);
@@ -268,6 +288,7 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 	if( edf_higher_prio(t, sem->hp_waiter) ) {
 		sem->hp_waiter = t;
 		if ( waitqueue_active(&sem->piq) ) {
+			TRACE_TASK(t, "is now the highest-prio waiter, updating priority inheritance for waiters in PIQ\n");
 			// PIQ is active, so set up prio inheritance
 			firstpiq = __waitqueue_peek_first(&sem->piq);
 			gsnedf_set_priority_inheritance( firstpiq, sem->hp_waiter );
@@ -284,11 +305,13 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 		if( sem->fqsize >= num_online_cpus() ) {
 			// Go to PQ
 			bheap_insert(gsnedf.order, &sem->pq, tsk_rt(t)->smlp_pq_node);
+			TRACE_TASK(t, "no TPCs available and FQ is full, added to PQ\n");
 		} else {
 			// Go to FQ
 			init_waitqueue_entry(&tsk_rt(t)->smlp_fq_node, t);
 			sem->fqsize++; // Record the number of FQ'd items, must be less than num cores
 			__add_wait_queue_entry_tail_exclusive(&sem->fq, &tsk_rt(t)->smlp_fq_node);
+			TRACE_TASK(t, "no TPCs available, added to FQ, FQ size now %d\n", sem->fqsize);
 		}
 
 		// Timestamp for suspending to wait on the lock
@@ -320,10 +343,11 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 
 		tsk_rt(t)->smlp_lock_arg = (void*)l; // So we can retrieve it later when this task goes to piq
 
+		TRACE_TASK(t, "lock can be immediately satisfied, assigned mask %llx (remaining mask %llx)\n", tsk_rt(t)->smlp_assigned_mask, sem->mask);
+
 		// unlock and let this task proceed
 		spin_unlock_irqrestore(&sem->fq.lock, flags);
 	}
-    
 
 	// Update the number of locks held, and continue to critical-section
 	tsk_rt(t)->num_locks_held++;
@@ -342,7 +366,14 @@ int gsnedf_smlp_lock_arg(struct litmus_lock* l, void* __user arg) {
         return -EFAULT;
 	}
 
+	TRACE_CUR("got lock_arg from user pointer %p\n", arg);
+
 	rv = __gsnedf_smlp_lock(l, &lock_arg);
+
+	if( rv ) {
+		lock_arg.assigned_mask = 0; // Return an assigned mask of 0 on failure to indicate no TPCs assigned
+		TRACE_CUR("lock_arg copy from user failed with return value %d\n", rv);
+	}
 
 	if( __copy_to_user(arg, &lock_arg, sizeof(lock_arg)) ) {
 		return -EFAULT;
@@ -374,12 +405,21 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 	unsigned long flags;
 	struct list_head *pos;
 	int bFound;
+	uint64_t newmask;
+
+	if( tsk_rt(t)->smlp_assigned_mask == 0 ) {
+		// This can happen if you call unlock without calling lock first, or if you call unlock multiple times
+		TRACE_CUR("smlp_unlock called without holding a lock (assigned_mask is 0)\n");
+		return -EPERM;
+	}
 
 	// Grab the FQ lock
 	spin_lock_irqsave(&sem->fq.lock, flags);
 
 	// Restore the mask of available TPCs
-	sem->mask |= tsk_rt(t)->smlp_assigned_mask;
+	newmask = sem->mask | tsk_rt(t)->smlp_assigned_mask;
+	TRACE_CUR("restoring TPC mask, old mask %llx, adding back %llx, new mask %llx\n", sem->mask, tsk_rt(t)->smlp_assigned_mask, newmask);
+	sem->mask = newmask; // sem->mask |= tsk_rt(t)->smlp_assigned_mask;
 	tsk_rt(t)->smlp_assigned_mask = 0;
 
 	// Are we not in the PIQ?
@@ -400,6 +440,7 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 		// Remove ourselves from the SQ
 		list_del(&tsk_rt(t)->smlp_sq_node.entry);
 	} else {
+		TRACE_CUR("smlp_unlock, removing from PIQ\n");
 		// Remove ourselves from the PIQ
 		list_del(&tsk_rt(t)->smlp_piq_node.entry);
 	}
@@ -412,7 +453,10 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 	while( sem->mask ) {
 		// Is anyone in the FQ?
 		nextfq = __waitqueue_remove_first(&sem->fq);
-		if( !nextfq ) break; // nothing left in FQ, so we are done.
+		if( !nextfq ) {
+			TRACE_CUR("FQ empty, no more tasks to move to SQ\n");
+			break; // nothing left in FQ, so we are done.
+		}
 
 		// Note the lock_arg contains the lock arguments, this needs to be used then set to NULL before
 		// the task resumes, otherwise the lock_arg will be assumed to be a litmus_lock pointer.
@@ -425,6 +469,9 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 
 		// Assign the TPCs
 		tsk_rt(nextfq)->smlp_assigned_mask = get_smlp_mask(sem->mask, lock_arg->allowed_tpc_bits);
+
+		TRACE_CUR("assigned mask for next task %llx from available %llx\n", tsk_rt(nextfq)->smlp_assigned_mask, sem->mask);
+
 		// Clear out these bits from the available mask
 		sem->mask &= ~(tsk_rt(nextfq)->smlp_assigned_mask);
 		// Return the assigned mask to the user
@@ -439,8 +486,10 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 			pqtask = bheap2task(nextpq);
 			init_waitqueue_entry(&tsk_rt(pqtask)->smlp_fq_node, pqtask );
 			__add_wait_queue_entry_tail_exclusive(&sem->fq, &tsk_rt(pqtask)->smlp_fq_node);
+			TRACE_CUR("moved task %s/%d from PQ to FQ\n", pqtask->comm, pqtask->pid);
 		} else {
 			sem->fqsize--;
+			TRACE_CUR("No entries in PQ, FQ size is now %d\n", sem->fqsize);
 		}
 
 		wake_up_process(nextfq);
@@ -472,6 +521,9 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 	if( tsk_rt(t)->inh_task )
 		gsnedf_clear_priority_inheritance(t);
 	spin_unlock_irqrestore(&sem->fq.lock, flags);
+
+	// Update the number of locks held
+	tsk_rt(t)->num_locks_held--;
 
 	return 0;
 }
@@ -519,6 +571,7 @@ struct litmus_lock* gsnedf_new_smlp(void* __user config) {
 	// Allocate the semaphore
 	sem = kmalloc(sizeof(*sem), GFP_KERNEL);
 	if (!sem) {
+		TRACE_TASK(current, "could not allocate SMLP semaphore\n");
 		return NULL;
 	}
 
@@ -534,5 +587,8 @@ struct litmus_lock* gsnedf_new_smlp(void* __user config) {
     sem->mask = init_config.init_mask;
 	sem->explicit_gpu_finish = init_config.explicit_gpu_finish;
 	sem->litmus_lock.ops = &gsnedf_smlp_lock_ops;
+
+	TRACE_TASK(current, "created new SMLP lock with init mask %llx and explicit_gpu_finish %d\n", sem->mask, sem->explicit_gpu_finish);
+
 	return &sem->litmus_lock;
 }

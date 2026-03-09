@@ -1,3 +1,6 @@
+#ifndef _LITMUS_DEBUG_TRACE_COMMON_H
+#define _LITMUS_DEBUG_TRACE_COMMON_H
+
 #ifdef CONFIG_SCHED_DEBUG_TRACE
 void sched_trace_log_message(const char* fmt, ...);
 void dump_trace_buffer(int max);
@@ -6,6 +9,8 @@ void dump_trace_buffer(int max);
 #define sched_trace_log_message(fmt, ...)
 
 #endif
+
+#include <linux/types.h>
 
 extern atomic_t __log_seq_no;
 
@@ -19,3 +24,5 @@ extern atomic_t __log_seq_no;
 #define TRACE_ARGS  atomic_add_return(1, &__log_seq_no), \
 		raw_smp_processor_id()
 #endif
+
+#endif /* _LITMUS_DEBUG_TRACE_COMMON_H */

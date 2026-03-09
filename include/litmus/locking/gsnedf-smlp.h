@@ -21,11 +21,13 @@ struct smlp_lock_arg {
     uint64_t assigned_mask;
 };
 
-struct litmus_lock* gsnedf_new_smlp(void* __user init_config);
+#ifdef __KERNEL__
+struct litmus_lock* gsnedf_new_smlp(void __user *init_config);
 long gsnedf_smlp_on_admit_task(struct task_struct * tsk);
 void gsnedf_smlp_on_exit_task(struct task_struct * tsk);
 void gsnedf_smlp_on_task_arrival(struct task_struct * tsk);
 int gsnedf_smlp_on_gpu_done(struct litmus_lock *l);
+#endif
 
 #endif
 #endif

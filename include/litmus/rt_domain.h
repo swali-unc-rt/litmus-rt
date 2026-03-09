@@ -182,4 +182,4 @@ static inline int jobs_pending(rt_domain_t* rt)
 	return ret;
 }
 
-#endif
+#endif // __UNC_RT_DOMAIN_H__
