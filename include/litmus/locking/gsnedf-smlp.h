@@ -27,6 +27,7 @@ long gsnedf_smlp_on_admit_task(struct task_struct * tsk);
 void gsnedf_smlp_on_exit_task(struct task_struct * tsk);
 void gsnedf_smlp_on_task_arrival(struct task_struct * tsk);
 int gsnedf_smlp_on_gpu_done(struct litmus_lock *l);
+void gsnedf_smlp_on_block_task(struct task_struct * tsk);
 #endif
 
 #endif

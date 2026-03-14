@@ -598,6 +598,10 @@ static void gsnedf_task_block(struct task_struct *t)
 
 	TRACE_TASK(t, "block at %llu\n", litmus_clock());
 
+#ifdef CONFIG_LITMUS_LOCKING_SMLP
+	gsnedf_smlp_on_block_task(t);
+#endif
+
 	/* unlink if necessary */
 	raw_spin_lock_irqsave(&gsnedf_lock, flags);
 	gsnedf_unlink(t);

@@ -105,7 +105,7 @@ int __gsnedf_smlp_on_gpu_done(struct litmus_lock *l) {
 		// Are we the head request? if so, set up priority inheritance
 		firstpiq = __waitqueue_peek_first(&sem->piq);
 		if( sem->hp_waiter != tsk && firstpiq == tsk && edf_higher_prio(sem->hp_waiter, tsk) ) {
-			gsnedf_set_priority_inheritance_nogsnedflock(tsk, sem->hp_waiter);
+			gsnedf_set_priority_inheritance(tsk, sem->hp_waiter);
 		}
 	}
 
@@ -116,7 +116,6 @@ int __gsnedf_smlp_on_gpu_done(struct litmus_lock *l) {
 int gsnedf_smlp_on_gpu_done(struct litmus_lock *l) {
 	struct task_struct* tsk = current;
 	struct smlp_semaphore *sem;
-	int rv;
 
 	// Cannot do a lock op if we aren't a real-time task
 	if (!is_realtime(tsk))
@@ -130,10 +129,7 @@ int gsnedf_smlp_on_gpu_done(struct litmus_lock *l) {
 	
 	TRACE_TASK(tsk, "marking GPU segment as done via system call\n");
 	
-	raw_spin_lock(&gsnedf_lock);
-	rv = __gsnedf_smlp_on_gpu_done(&sem->litmus_lock);
-	raw_spin_unlock(&gsnedf_lock);
-	return rv;
+	return __gsnedf_smlp_on_gpu_done(&sem->litmus_lock);
 }
 
 // If a suspended SMLP task re-arrives, then it is put in the PIQ
@@ -156,6 +152,28 @@ void gsnedf_smlp_on_task_arrival(struct task_struct * tsk) {
 		TRACE_TASK( tsk, "task arrival while suspended, moving to PIQ automatically.\n" );
 		__gsnedf_smlp_on_gpu_done(&sem->litmus_lock);
 	}
+}
+
+// If a task blocks
+void gsnedf_smlp_on_block_task(struct task_struct * tsk) {
+	struct smlp_semaphore *sem;
+
+	// Cannot do a lock op if we aren't a real-time task
+	if (!is_realtime(tsk))
+		return;
+
+	// Can we not retrieve the litmus_lock? (task might not be related to SMLP)
+	// It could also be a lock arg if it's just regular suspended
+	if( !tsk_rt(tsk)->smlp_lock_arg )
+		return;
+	
+	// TODO: add capabilities for setting up prio inheritance when tasks block.
+	// if( ((struct smlp_lock_arg*)tsk_rt(tsk)->smlp_lock_arg)->assigned_mask == -1UL ) {
+	// 	// If it's a smlp_lock_arg, 
+	// 	return;
+	// }
+	// 
+	// sem = smlp_from_lock( (struct litmus_lock*) tsk_rt(tsk)->smlp_lock_arg );
 }
 
 // Caller is responsible for holding a lock to sem->fq.lock
@@ -230,7 +248,6 @@ int popcountll(uint64_t x) {
 
 static uint64_t get_smlp_mask(uint64_t current_mask, uint64_t allowed_tpc_bits) {
 	// assign mask to this request, first, how many SMs are available?
-	//int tpcsToUse = popcountll(current_mask);
 	int tpcsToUse_initial = popcountll(current_mask);
 	uint64_t assigned_mask = 0;
 	int i, tpc, tpcsToUse;
@@ -239,7 +256,7 @@ static uint64_t get_smlp_mask(uint64_t current_mask, uint64_t allowed_tpc_bits) 
 
 	// Can this request take this many TPCs?
 	tpcsToUse = tpcsToUse_initial;
-	while( !(allowed_tpc_bits & (1ULL << (tpcsToUse-1))) )
+	while( !(allowed_tpc_bits & (1UL << (tpcsToUse-1))) )
 		tpcsToUse--;
 
 	if( tpcsToUse != tpcsToUse_initial )
@@ -249,11 +266,10 @@ static uint64_t get_smlp_mask(uint64_t current_mask, uint64_t allowed_tpc_bits) 
 	assigned_mask = 0;
 	for( i = 0; i < tpcsToUse; ++i ) {
 		tpc = __builtin_ffsll(current_mask) - 1;
-		current_mask &= ~(1ULL << tpc);
-		assigned_mask |= (1ULL << tpc);
+		current_mask &= ~(1UL << tpc);
+		assigned_mask |= (1UL << tpc);
 	}
 
-	//lock_arg->assigned_mask = tsk_rt(t)->smlp_assigned_mask;
 	return assigned_mask;
 }
 
@@ -284,22 +300,12 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 	// Grab the FQ lock
 	spin_lock_irqsave(&sem->fq.lock, flags);
 
-	// Update the highest-prio person waiting
-	if( edf_higher_prio(t, sem->hp_waiter) ) {
-		sem->hp_waiter = t;
-		if ( waitqueue_active(&sem->piq) ) {
-			TRACE_TASK(t, "is now the highest-prio waiter, updating priority inheritance for waiters in PIQ\n");
-			// PIQ is active, so set up prio inheritance
-			firstpiq = __waitqueue_peek_first(&sem->piq);
-			gsnedf_set_priority_inheritance( firstpiq, sem->hp_waiter );
-		}
-	}
-
 	// We can either fit in the FQ or SQ
 	if( !sem->mask ) {
 		// No available TPCs, go to PQ->FQ
 		set_current_state(TASK_UNINTERRUPTIBLE);
 
+		// TODO: // lock_arg->assigned_mask = -1UL;
 		tsk_rt(t)->smlp_lock_arg = (void*)lock_arg; // So we can retrieve it later
 
 		if( sem->fqsize >= num_online_cpus() ) {
@@ -312,6 +318,17 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 			sem->fqsize++; // Record the number of FQ'd items, must be less than num cores
 			__add_wait_queue_entry_tail_exclusive(&sem->fq, &tsk_rt(t)->smlp_fq_node);
 			TRACE_TASK(t, "no TPCs available, added to FQ, FQ size now %d\n", sem->fqsize);
+		}
+
+		// Update the highest-prio person waiting
+		if( edf_higher_prio(t, sem->hp_waiter) ) {
+			sem->hp_waiter = t;
+			if ( waitqueue_active(&sem->piq) ) {
+				TRACE_TASK(t, "is now the highest-prio waiter, updating priority inheritance for waiters in PIQ\n");
+				// PIQ is active, so set up prio inheritance
+				firstpiq = __waitqueue_peek_first(&sem->piq);
+				gsnedf_set_priority_inheritance( firstpiq, sem->hp_waiter );
+			}
 		}
 
 		// Timestamp for suspending to wait on the lock
@@ -343,7 +360,7 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 
 		tsk_rt(t)->smlp_lock_arg = (void*)l; // So we can retrieve it later when this task goes to piq
 
-		TRACE_TASK(t, "lock can be immediately satisfied, assigned mask %llx (remaining mask %llx)\n", tsk_rt(t)->smlp_assigned_mask, sem->mask);
+		TRACE_TASK(t, "lock can be immediately satisfied, assigned mask %lx (remaining mask %lx)\n", tsk_rt(t)->smlp_assigned_mask, sem->mask);
 
 		// unlock and let this task proceed
 		spin_unlock_irqrestore(&sem->fq.lock, flags);
@@ -418,7 +435,7 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 
 	// Restore the mask of available TPCs
 	newmask = sem->mask | tsk_rt(t)->smlp_assigned_mask;
-	TRACE_CUR("restoring TPC mask, old mask %llx, adding back %llx, new mask %llx\n", sem->mask, tsk_rt(t)->smlp_assigned_mask, newmask);
+	TRACE_CUR("restoring TPC mask, old mask %lx, adding back %lx, new mask %lx\n", sem->mask, tsk_rt(t)->smlp_assigned_mask, newmask);
 	sem->mask = newmask; // sem->mask |= tsk_rt(t)->smlp_assigned_mask;
 	tsk_rt(t)->smlp_assigned_mask = 0;
 
@@ -448,7 +465,6 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 	tsk_rt(t)->smlp_piq_node.entry.next = NULL;
 	tsk_rt(t)->smlp_piq_node.entry.prev = NULL;
 
-	// TODO: move the queues forward
 	// Can only do this if there are available TPCs
 	while( sem->mask ) {
 		// Is anyone in the FQ?
@@ -470,7 +486,7 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 		// Assign the TPCs
 		tsk_rt(nextfq)->smlp_assigned_mask = get_smlp_mask(sem->mask, lock_arg->allowed_tpc_bits);
 
-		TRACE_CUR("assigned mask for next task %llx from available %llx\n", tsk_rt(nextfq)->smlp_assigned_mask, sem->mask);
+		TRACE_CUR("assigned mask for next task %lx from available %lx\n", tsk_rt(nextfq)->smlp_assigned_mask, sem->mask);
 
 		// Clear out these bits from the available mask
 		sem->mask &= ~(tsk_rt(nextfq)->smlp_assigned_mask);
@@ -492,6 +508,7 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 			TRACE_CUR("No entries in PQ, FQ size is now %d\n", sem->fqsize);
 		}
 
+		// Calling this will require gsnedf lock eventually
 		wake_up_process(nextfq);
 	}
 
@@ -508,6 +525,7 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 				if ( piqhead != sem->hp_waiter // Is the head of the PIQ not the highest priority task found?
 					&& edf_higher_prio(sem->hp_waiter, piqhead )
 				) {
+					// Calling this will require gsnedf lock eventually
 					gsnedf_set_priority_inheritance( piqhead, sem->hp_waiter );
 				}
 			} // wq_active
@@ -518,8 +536,10 @@ int gsnedf_smlp_unlock(struct litmus_lock* l) {
 	tsk_rt(t)->smlp_lock_arg = NULL;
 
 	// We need to remove our own prio inheritance (if any)
-	if( tsk_rt(t)->inh_task )
+	if( tsk_rt(t)->inh_task ) {
+		// Calling this will require gsnedf lock eventually
 		gsnedf_clear_priority_inheritance(t);
+	}
 	spin_unlock_irqrestore(&sem->fq.lock, flags);
 
 	// Update the number of locks held
@@ -588,7 +608,7 @@ struct litmus_lock* gsnedf_new_smlp(void* __user config) {
 	sem->explicit_gpu_finish = init_config.explicit_gpu_finish;
 	sem->litmus_lock.ops = &gsnedf_smlp_lock_ops;
 
-	TRACE_TASK(current, "created new SMLP lock with init mask %llx and explicit_gpu_finish %d\n", sem->mask, sem->explicit_gpu_finish);
+	TRACE_TASK(current, "created new SMLP lock with init mask %lx and explicit_gpu_finish %d\n", sem->mask, sem->explicit_gpu_finish);
 
 	return &sem->litmus_lock;
 }
