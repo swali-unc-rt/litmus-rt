@@ -1,0 +1,1 @@
+obj-$(CONFIG_LITMUS_ENABLE_RELEASEGROUPS) += releasegroups.o

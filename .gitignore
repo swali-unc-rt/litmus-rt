@@ -148,3 +148,4 @@ x509.genkey
 /compile_commands.json
 makefileBuildLog.txt
 /kernel/kheaders_data.tar.xz/
+/kernel/kheaders_data.tar.xz.tmp/

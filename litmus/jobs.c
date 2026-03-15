@@ -46,9 +46,19 @@ void prepare_for_next_period(struct task_struct *t)
 		/* sporadic release */
 		setup_release(t, tsk_rt(t)->sporadic_release_time);
 		tsk_rt(t)->sporadic_release = 0;
-	} else {
+	} else if( is_periodic(t) ) {
 		/* periodic release => add period */
 		setup_release(t, get_release(t) + get_rt_period(t));
+	}
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	else if( is_releasegroup(t) ) {
+		// Do nothing, there is no preparing for tasks that are
+		// released as a part of a release group.
+	}
+#endif
+	else {
+		TRACE_TASK(t, "Unknown release policy for next job: release_policy=%d\n",
+			   get_release_policy(t));
 	}
 }
 

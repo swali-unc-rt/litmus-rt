@@ -85,6 +85,13 @@ config BUG_ON_MIGRATION_DEADLOCK
 	  BUG() triggers, the scheduler is broken and turning off this option
 	  won't fix it.
 
+config LITMUS_ENABLE_RELEASEGROUPS
+       bool "Allow tasks to release as a group"
+       default y
+       help
+          Tasks can register to an integer release group id. They will not
+	  release normally, periodically or sporadically. Instead, they will
+	  only release when the group is released by some other task.
 
 endmenu
 

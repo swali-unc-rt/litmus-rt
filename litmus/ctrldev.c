@@ -141,6 +141,15 @@ asmlinkage long sys_smlp_gpu_done(int lock_od);
 #endif
 #endif
 
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+asmlinkage long sys_releasegroup_release(unsigned int releasegroup_id);
+asmlinkage long sys_releasegroup_create(unsigned int releasegroup_id);
+asmlinkage long sys_releasegroup_addtask(unsigned int releasegroup_id);
+asmlinkage long sys_releasegroup_remove(void);
+asmlinkage long sys_releasegroup_envinit(void);
+asmlinkage long sys_releasegroup_envdestroy(void);
+#endif
+
 static long litmus_ctrl_ioctl(struct file *filp,
 	unsigned int cmd, unsigned long arg)
 {
@@ -163,6 +172,11 @@ static long litmus_ctrl_ioctl(struct file *filp,
 	case LRT_od_open:
 #ifdef CONFIG_LITMUS_LOCKING_WITHARGS
 	case LRT_litmus_lock_arg:
+#endif
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	case LRT_releasegroup_release:
+	case LRT_releasegroup_create:
+	case LRT_releasegroup_addtask:
 #endif
 		/* multiple arguments => need to get args via pointer */
 		/* get syscall parameters */
@@ -199,6 +213,14 @@ static long litmus_ctrl_ioctl(struct file *filp,
 			return sys_litmus_lock_arg(syscall_args.lock_arg.lock_od,
 						   syscall_args.lock_arg.arg);
 #endif
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+		case LRT_releasegroup_release:
+			return sys_releasegroup_release( syscall_args.releasegroup_arg.releasegroup_id );
+		case LRT_releasegroup_create:
+			return sys_releasegroup_create( syscall_args.releasegroup_arg.releasegroup_id );
+		case LRT_releasegroup_addtask:
+			return sys_releasegroup_addtask( syscall_args.releasegroup_arg.releasegroup_id );
+#endif
 		default:
 			printk(KERN_DEBUG "ctrldev: strange od_open cmd: %d\n", cmd);
 			return -EINVAL;
@@ -233,6 +255,17 @@ static long litmus_ctrl_ioctl(struct file *filp,
 
 	case LRT_release_ts:
 		return sys_release_ts((lt_t __user *) arg);
+
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	case LRT_releasegroup_remove:
+		return sys_releasegroup_remove();
+	
+	case LRT_releasegroup_envinit:
+		return sys_releasegroup_envinit();
+	
+	case LRT_releasegroup_envdestroy:
+		return sys_releasegroup_envdestroy();
+#endif
 
 	default:
 		printk(KERN_DEBUG "ctrldev: strange ioctl (%u, %lu)\n", cmd, arg);

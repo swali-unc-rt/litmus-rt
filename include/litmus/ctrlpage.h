@@ -87,6 +87,14 @@ typedef enum {
 	LRT_smlp_gpu_done,
 #endif
 #endif
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	LRT_releasegroup_release,
+	LRT_releasegroup_create,
+	LRT_releasegroup_addtask,
+	LRT_releasegroup_remove,
+	LRT_releasegroup_envinit,
+	LRT_releasegroup_envdestroy,
+#endif
 } litmus_syscall_id_t;
 
 union litmus_syscall_args {
@@ -117,6 +125,12 @@ union litmus_syscall_args {
 		int lock_od;
 		void __user *arg;
 	} lock_arg;
+#endif
+
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	struct {
+		unsigned int releasegroup_id;
+	} releasegroup_arg;
 #endif
 };
 

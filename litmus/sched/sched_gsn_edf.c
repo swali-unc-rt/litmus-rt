@@ -47,6 +47,10 @@
 #include <litmus/locking/gsnedf-smlp.h>
 #endif
 
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+#include <litmus/releasegroups/releasegroups.h>
+#endif
+
 /* Overview of GSN-EDF operations.
  *
  * For a detailed explanation of GSN-EDF have a look at the FMLP paper. This
@@ -376,14 +380,25 @@ static noinline void curr_job_completion(int forced)
 	tsk_rt(t)->completed = 0;
 	/* prepare for next period */
 	prepare_for_next_period(t);
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	if( !is_releasegroup(t) ) {
+#endif
 	if (is_early_releasing(t) || is_released(t, litmus_clock()))
 		sched_trace_task_release(t);
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	}
+#endif
 	/* unlink */
 	gsnedf_unlink(t);
 	/* requeue
 	 * But don't requeue a blocking task. */
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	if( is_current_running() && !is_releasegroup(t) )
+		gsnedf_job_arrival(t);
+#else
 	if (is_current_running())
 		gsnedf_job_arrival(t);
+#endif
 }
 
 /* Getting schedule() right is a bit tricky. schedule() may not make any
@@ -649,6 +664,66 @@ static long gsnedf_admit_task(struct task_struct* tsk)
 	return rv;
 }
 
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+long gsnedf_releasegroup_release(unsigned int releasegroup_id) {
+	struct releasegroup* rg;
+	struct task_struct* ts;
+	struct rt_param *t, *next;
+	lt_t now;
+	unsigned long flags;
+	int on_rq;
+	int is_scheduled;
+
+	rg = find_releasegroup(releasegroup_id);
+	if( rg == 0 ) {
+		// Error, release group not found
+		TRACE_TASK(current, "Could not find release group %u\n", releasegroup_id );
+		return -EINVAL;
+	}
+
+	TRACE_TASK(current, "Releasing group %u\n", releasegroup_id );
+
+	now = litmus_clock();
+
+	raw_spin_lock_irqsave(&gsnedf_lock, flags);
+
+	list_for_each_entry_safe(t, next, &rg->tasks, releasegroup_entry) {
+		// actually do the release of these tasks
+		ts = container_of(t, struct task_struct, rt_param);
+
+		// Check to see if this task is already in the rq or cpu
+		on_rq = is_queued(ts);
+		is_scheduled = tsk_rt(ts)->scheduled_on != NO_CPU;
+
+		// If it's on the rq or already scheduled, don't release
+		if( !on_rq && !is_scheduled ) {
+			// If it's not on the rq or scheduled, then we can release it
+			release_at(ts,now);
+			sched_trace_task_release(ts);
+			gsnedf_job_arrival(ts);
+			TRACE_TASK(ts, "is being released by group\n");
+		} else {
+			TRACE_TASK(ts, "is already on_rq (%d) or is_scheduled (%d)\n", on_rq, is_scheduled );
+		}
+	}
+
+	raw_spin_unlock_irqrestore(&gsnedf_lock, flags);
+
+	return 0;
+}
+
+long gsnedf_releasegroup_remove(void) {
+	long rv;
+	unsigned long flags;
+	
+	raw_spin_lock_irqsave(&gsnedf_lock, flags);
+	rv = remove_task_from_releasegroup(current);
+	raw_spin_unlock_irqrestore(&gsnedf_lock, flags);
+
+	return rv;
+}
+#endif
+
 #ifdef CONFIG_LITMUS_LOCKING
 
 #include <litmus/locking/gsnedf-fmlp.h>
@@ -875,6 +950,10 @@ static struct sched_plugin gsn_edf_plugin __cacheline_aligned_in_smp = {
 	.get_domain_proc_info	= gsnedf_get_domain_proc_info,
 #ifdef CONFIG_LITMUS_LOCKING
 	.allocate_lock		= gsnedf_allocate_lock,
+#endif
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	.releasegroup_release = gsnedf_releasegroup_release,
+	.releasegroup_remove  = gsnedf_releasegroup_remove,
 #endif
 };
 

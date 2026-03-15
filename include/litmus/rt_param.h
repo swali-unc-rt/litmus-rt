@@ -51,6 +51,13 @@ typedef enum {
        constraints. Beware this can peg your CPUs if used in
        the wrong applications. Only supported by EDF schedulers. */
 	TASK_EARLY
+
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	// Jobs of this type can only be released by their release group.
+	// Some other job will be responsible for releasing a group.
+	// When a group is released, the release time is set for all tasks in that group.
+	,TASK_RELEASEGROUP
+#endif
 } release_policy_t;
 
 /* We use the common priority interpretation "lower index == higher priority",
@@ -124,10 +131,17 @@ struct rt_task {
 	task_class_t	cls;
 	budget_policy_t  budget_policy;  /* ignored by pfair */
 	release_policy_t release_policy;
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	unsigned int releasegroup_id;
+#endif
 };
 
 /* don't export internal data structures to user space (liblitmus) */
 #ifdef __KERNEL__
+
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+#include <litmus/releasegroups/releasegroups.h>
+#endif
 
 struct _rt_domain;
 struct bheap_node;
@@ -205,6 +219,12 @@ struct rt_param {
 	uint64_t smlp_assigned_mask;
 	void* smlp_lock_arg;
 #endif
+#endif
+
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	// Task can be a part of one release group
+	struct list_head releasegroup_entry;
+	unsigned int releasegroup_id;
 #endif
 
 	/* user controlled parameters */

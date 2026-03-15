@@ -156,6 +156,12 @@ asmlinkage long sys_set_rt_task_param(pid_t pid, struct rt_task __user * param)
 		goto out_unlock;
 	}
 
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	if( 0 != tp.releasegroup_id ) {
+		add_task_to_releasegroup(tp.releasegroup_id,target);
+	}
+#endif
+
 	if (is_realtime(target)) {
 		/* The task is already a real-time task.
 		 * Let plugin decide whether it wants to support

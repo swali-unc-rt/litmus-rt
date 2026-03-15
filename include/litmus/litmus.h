@@ -89,6 +89,11 @@ int litmus_be_migrate_to(int cpu);
 #else
 #define is_early_releasing(t)	(0)
 #endif
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+#define is_releasegroup(t)	(get_release_policy(t) == TASK_RELEASEGROUP)
+#else
+#define is_releasegroup(t)	(0)
+#endif
 
 #define is_hrt(t)     		\
 	(tsk_rt(t)->task_params.cls == RT_CLASS_HARD)

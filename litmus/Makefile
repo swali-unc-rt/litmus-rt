@@ -19,3 +19,4 @@ obj-y += reservations/
 obj-y += sched/
 obj-y += locking/
 obj-y += tracing/
+obj-y += releasegroups/

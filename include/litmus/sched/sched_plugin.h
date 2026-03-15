@@ -114,6 +114,11 @@ typedef void (*current_budget_t)(lt_t *used_so_far, lt_t *remaining);
 typedef long (*reservation_create_t)(int reservation_type, void* __user config);
 typedef long (*reservation_destroy_t)(unsigned int reservation_id, int cpu);
 
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+typedef long (*releasegroup_release_t)(unsigned int releasegroup_id);
+typedef long (*releasegroup_remove_t)(void);
+#endif
+
 /************************ misc routines ***********************/
 
 
@@ -164,6 +169,11 @@ struct sched_plugin {
 #ifdef CONFIG_LITMUS_LOCKING
 	/*	locking protocols	*/
 	allocate_lock_t		allocate_lock;
+#endif
+
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	releasegroup_release_t	releasegroup_release;
+	releasegroup_remove_t	releasegroup_remove;
 #endif
 } __attribute__ ((__aligned__(SMP_CACHE_BYTES)));
 

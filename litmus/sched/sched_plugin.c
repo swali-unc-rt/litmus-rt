@@ -174,6 +174,16 @@ static long litmus_dummy_reservation_destroy(unsigned int reservation_id, int cp
 	return -ENOSYS;
 }
 
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+static long litmus_dummy_releasegroup_release(unsigned int releasegroup_id) {
+	return -ENOSYS;
+}
+
+static long litmus_dummy_releasegroup_remove(void) {
+	return -ENOSYS;
+}
+#endif
+
 /* The default scheduler plugin. It doesn't do anything and lets Linux do its
  * job.
  */
@@ -198,6 +208,10 @@ struct sched_plugin linux_sched_plugin = {
 #endif
 	.admit_task = litmus_dummy_admit_task,
 	.fork_task = litmus_dummy_fork_task,
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+	.releasegroup_release = litmus_dummy_releasegroup_release,
+	.releasegroup_remove  = litmus_dummy_releasegroup_remove,
+#endif
 };
 
 /*
