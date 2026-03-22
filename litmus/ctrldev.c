@@ -148,6 +148,8 @@ asmlinkage long sys_releasegroup_addtask(unsigned int releasegroup_id);
 asmlinkage long sys_releasegroup_remove(void);
 asmlinkage long sys_releasegroup_envinit(void);
 asmlinkage long sys_releasegroup_envdestroy(void);
+asmlinkage long sys_releasegroup_cache(unsigned int releasegroup_id);
+asmlinkage long sys_releasegroup_release_cached(void);
 #endif
 
 static long litmus_ctrl_ioctl(struct file *filp,
@@ -177,6 +179,7 @@ static long litmus_ctrl_ioctl(struct file *filp,
 	case LRT_releasegroup_release:
 	case LRT_releasegroup_create:
 	case LRT_releasegroup_addtask:
+	case LRT_releasegroup_cache:
 #endif
 		/* multiple arguments => need to get args via pointer */
 		/* get syscall parameters */
@@ -220,6 +223,8 @@ static long litmus_ctrl_ioctl(struct file *filp,
 			return sys_releasegroup_create( syscall_args.releasegroup_arg.releasegroup_id );
 		case LRT_releasegroup_addtask:
 			return sys_releasegroup_addtask( syscall_args.releasegroup_arg.releasegroup_id );
+		case LRT_releasegroup_cache:
+			return sys_releasegroup_cache( syscall_args.releasegroup_arg.releasegroup_id );
 #endif
 		default:
 			printk(KERN_DEBUG "ctrldev: strange od_open cmd: %d\n", cmd);
@@ -265,6 +270,9 @@ static long litmus_ctrl_ioctl(struct file *filp,
 	
 	case LRT_releasegroup_envdestroy:
 		return sys_releasegroup_envdestroy();
+	
+	case LRT_releasegroup_release_cached:
+		return sys_releasegroup_release_cached();
 #endif
 
 	default:

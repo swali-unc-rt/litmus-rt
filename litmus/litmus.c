@@ -160,6 +160,7 @@ asmlinkage long sys_set_rt_task_param(pid_t pid, struct rt_task __user * param)
 	if( 0 != tp.releasegroup_id ) {
 		add_task_to_releasegroup(tp.releasegroup_id,target);
 	}
+	target->rt_param.cached_releasegroup = NULL;
 #endif
 
 	if (is_realtime(target)) {

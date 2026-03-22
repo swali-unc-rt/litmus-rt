@@ -115,7 +115,7 @@ typedef long (*reservation_create_t)(int reservation_type, void* __user config);
 typedef long (*reservation_destroy_t)(unsigned int reservation_id, int cpu);
 
 #ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
-typedef long (*releasegroup_release_t)(unsigned int releasegroup_id);
+typedef long (*releasegroup_release_t)(struct releasegroup *rg);
 typedef long (*releasegroup_remove_t)(void);
 #endif
 

@@ -94,6 +94,8 @@ typedef enum {
 	LRT_releasegroup_remove,
 	LRT_releasegroup_envinit,
 	LRT_releasegroup_envdestroy,
+	LRT_releasegroup_cache,
+	LRT_releasegroup_release_cached,
 #endif
 } litmus_syscall_id_t;
 

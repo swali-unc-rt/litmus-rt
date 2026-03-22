@@ -181,6 +181,10 @@ struct rt_job {
 
 struct pfair_param;
 
+#ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
+struct releasegroup;
+#endif
+
 /*	RT task parameters for scheduling extensions
  *	These parameters are inherited during clone and therefore must
  *	be explicitly set up before the task set is launched.
@@ -225,6 +229,7 @@ struct rt_param {
 	// Task can be a part of one release group
 	struct list_head releasegroup_entry;
 	unsigned int releasegroup_id;
+	struct releasegroup *cached_releasegroup;
 #endif
 
 	/* user controlled parameters */

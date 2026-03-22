@@ -665,8 +665,7 @@ static long gsnedf_admit_task(struct task_struct* tsk)
 }
 
 #ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
-long gsnedf_releasegroup_release(unsigned int releasegroup_id) {
-	struct releasegroup* rg;
+long gsnedf_releasegroup_release(struct releasegroup *rg) {
 	struct task_struct* ts;
 	struct rt_param *t, *next;
 	lt_t now;
@@ -674,14 +673,12 @@ long gsnedf_releasegroup_release(unsigned int releasegroup_id) {
 	int on_rq;
 	int is_scheduled;
 
-	rg = find_releasegroup(releasegroup_id);
-	if( rg == 0 ) {
-		// Error, release group not found
-		TRACE_TASK(current, "Could not find release group %u\n", releasegroup_id );
+	if( NULL == rg ) {
+		TRACE_TASK(current, "Release group is NULL\n");
 		return -EINVAL;
 	}
 
-	TRACE_TASK(current, "Releasing group %u\n", releasegroup_id );
+	TRACE_TASK(current, "Releasing group %u\n", rg->id );
 
 	now = litmus_clock();
 

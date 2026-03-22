@@ -175,7 +175,7 @@ static long litmus_dummy_reservation_destroy(unsigned int reservation_id, int cp
 }
 
 #ifdef CONFIG_LITMUS_ENABLE_RELEASEGROUPS
-static long litmus_dummy_releasegroup_release(unsigned int releasegroup_id) {
+static long litmus_dummy_releasegroup_release(struct releasegroup *rg) {
 	return -ENOSYS;
 }
 

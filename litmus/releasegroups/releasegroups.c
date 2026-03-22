@@ -15,7 +15,6 @@ struct releasegroup_environment rgenv;
 raw_spinlock_t rgenv_lock;
 
 void releasegroup_init(struct releasegroup* rgroup) {
-    unsigned long flags;
     memset(rgroup, 0, sizeof(*rgroup));
     INIT_LIST_HEAD(&rgroup->tasks);
 }
@@ -41,6 +40,7 @@ void releasegroup_environment_destroy() {
         list_for_each_entry_safe(rt, rtnext, &rg->tasks, releasegroup_entry ) {
             list_del(&rt->releasegroup_entry);
             rt->releasegroup_id = 0;
+            rt->cached_releasegroup = 0;
             // re-enter them into the scheduler so this process can close
             ts = container_of(rt, struct task_struct, rt_param);
             release_at(ts,now);
@@ -68,7 +68,7 @@ long create_releasegroup(unsigned int id) {
 
     raw_spin_lock_irqsave(&rgenv_lock, flags);
 
-    if( 0 != find_releasegroup(id) ) {
+    if( NULL != find_releasegroup(id) ) {
         // error, cannot recreate this release group
         TRACE_TASK(current, "release group id %u already exists!\n", id);
         raw_spin_unlock_irqrestore(&rgenv_lock, flags);
@@ -81,7 +81,7 @@ long create_releasegroup(unsigned int id) {
         return -ENOMEM;
     }
     releasegroup_init(rg);
-    rg->id = id; // fuck
+    rg->id = id;
     
     // add to the list
     list_add_tail(&rg->list, &rgenv.groups);
@@ -106,7 +106,7 @@ long add_task_to_releasegroup(unsigned int rgroup_id, struct task_struct* ts) {
     raw_spin_lock_irqsave(&rgenv_lock, flags);
 
     rg = find_releasegroup(rgroup_id);
-    if( rg == 0 ) {
+    if( NULL == rg ) {
         // Could not find release group
         TRACE_TASK(ts, "could not be added to unknown release group %u\n", rgroup_id);
         raw_spin_unlock_irqrestore(&rgenv_lock, flags);
@@ -135,7 +135,7 @@ long remove_task_from_releasegroup(struct task_struct* ts) {
     raw_spin_lock_irqsave(&rgenv_lock, flags);
 
     rg = find_releasegroup(tsk_rt(ts)->releasegroup_id);
-    if( rg == 0 ) {
+    if( NULL == rg ) {
         // Could not find release group
         raw_spin_unlock_irqrestore(&rgenv_lock, flags);
         TRACE_TASK(ts,"could not find release group %u when removing self from group", tsk_rt(ts)->releasegroup_id );
@@ -168,9 +168,21 @@ struct releasegroup* find_releasegroup(unsigned int id) {
     return 0;
 }
 
-
 asmlinkage long sys_releasegroup_release(unsigned int releasegroup_id) {
-    return litmus->releasegroup_release(releasegroup_id);
+    struct releasegroup *rg;
+    unsigned long flags;
+
+    raw_spin_lock_irqsave(&rgenv_lock, flags);
+    rg = find_releasegroup(releasegroup_id);
+    raw_spin_unlock_irqrestore(&rgenv_lock, flags);
+
+    if( NULL == rg ) {
+        // Could not find release group
+        TRACE_TASK(current, "could not find release group %u for release\n", releasegroup_id);
+        return -EINVAL;
+    }
+
+    return litmus->releasegroup_release(rg);
 }
 
 asmlinkage long sys_releasegroup_create(unsigned int releasegroup_id) {
@@ -182,7 +194,7 @@ asmlinkage long sys_releasegroup_addtask(unsigned int releasegroup_id) {
 }
 
 asmlinkage long sys_releasegroup_remove(void) {
-    return litmus->releasegroup_remove();
+    return litmus->releasegroup_remove ? litmus->releasegroup_remove() : -ENOSYS;
 }
 
 asmlinkage long sys_releasegroup_envinit(void) {
@@ -193,4 +205,27 @@ asmlinkage long sys_releasegroup_envinit(void) {
 asmlinkage long sys_releasegroup_envdestroy(void) {
     releasegroup_environment_destroy();
     return 0;
+}
+
+asmlinkage long sys_releasegroup_cache(unsigned int releasegroup_id) {
+    struct releasegroup *rg;
+    unsigned long flags;
+
+    raw_spin_lock_irqsave(&rgenv_lock, flags);
+
+    rg = find_releasegroup(releasegroup_id);
+    if( NULL == rg ) {
+        // Could not find release group
+        TRACE_TASK(current, "could not find release group %u for caching\n", releasegroup_id);
+        raw_spin_unlock_irqrestore(&rgenv_lock, flags);
+        return -EINVAL;
+    }
+
+    tsk_rt(current)->cached_releasegroup = rg;
+    raw_spin_unlock_irqrestore(&rgenv_lock, flags);
+    return 0;
+}
+
+asmlinkage long sys_releasegroup_release_cached(void) {
+    return litmus->releasegroup_release ? litmus->releasegroup_release(tsk_rt(current)->cached_releasegroup) : -ENOSYS;
 }
