@@ -279,8 +279,10 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 	unsigned long flags;
 
 	// Cannot do a lock op if we aren't a real-time task
-	if (!is_realtime(t))
+	if (!is_realtime(t)) {
+		TS_LOCK_END
 		return -EPERM;
+	}
 	
 	tsk_rt(t)->smlp_assigned_mask = 0;
 
@@ -332,6 +334,7 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 		}
 
 		// Timestamp for suspending to wait on the lock
+		TS_LOCK_END
 		TS_LOCK_SUSPEND;
 
 		/* release lock before sleeping */
@@ -364,6 +367,7 @@ static int __gsnedf_smlp_lock(struct litmus_lock* l, struct smlp_lock_arg* lock_
 
 		// unlock and let this task proceed
 		spin_unlock_irqrestore(&sem->fq.lock, flags);
+		TS_LOCK_END
 	}
 
 	// Update the number of locks held, and continue to critical-section
@@ -378,6 +382,8 @@ int gsnedf_smlp_lock_arg(struct litmus_lock* l, void* __user arg) {
     if( !access_ok(arg, sizeof(lock_arg)) ) {
         return -EPERM;
 	}
+
+	TS_LOCK_START
 
     if( __copy_from_user(&lock_arg, arg, sizeof(lock_arg)) ) {
         return -EFAULT;
@@ -408,6 +414,9 @@ int gsnedf_smlp_lock(struct litmus_lock* l) {
 	struct smlp_lock_arg lock_arg;
 	struct task_struct *t = current;
 	int rv;
+
+	TS_LOCK_START
+
 	lock_arg.allowed_tpc_bits = 1; // Only need to lock 1 TPC for default lock op
 	rv = __gsnedf_smlp_lock(l, &lock_arg);
 	tsk_rt(t)->ctrl_page->smlp_assigned_mask = lock_arg.assigned_mask;

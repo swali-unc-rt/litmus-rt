@@ -74,6 +74,8 @@ int gsnedf_fmlp_lock(struct litmus_lock* l)
 	if (tsk_rt(t)->num_locks_held)
 		return -EBUSY;
 
+	TS_LOCK_START
+
 	spin_lock_irqsave(&sem->wait.lock, flags);
 
 	if (sem->owner) {
@@ -93,6 +95,7 @@ int gsnedf_fmlp_lock(struct litmus_lock* l)
 				gsnedf_set_priority_inheritance(sem->owner, sem->hp_waiter);
 		}
 
+		TS_LOCK_END
 		TS_LOCK_SUSPEND;
 
 		/* release lock before sleeping */
@@ -116,6 +119,7 @@ int gsnedf_fmlp_lock(struct litmus_lock* l)
 		sem->owner = t;
 
 		spin_unlock_irqrestore(&sem->wait.lock, flags);
+		TS_LOCK_END
 	}
 
 	tsk_rt(t)->num_locks_held++;

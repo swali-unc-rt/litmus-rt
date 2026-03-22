@@ -100,6 +100,8 @@ int gsnedf_omlp_lock(struct litmus_lock* l) {
 	// heap node for the omlp, so nested acquisition is not possible, but doable in the future.
 	if (tsk_rt(t)->num_locks_held)
 		return -EBUSY;
+	
+	TS_LOCK_START
 
 	// Grab the FQ lock
 	spin_lock_irqsave(&sem->fq.lock, flags);
@@ -127,6 +129,7 @@ int gsnedf_omlp_lock(struct litmus_lock* l) {
 		}
 
 		// Timestamp for suspending to wait on the lock
+		TS_LOCK_END
 		TS_LOCK_SUSPEND;
 
 		/* release lock before sleeping */
@@ -142,6 +145,7 @@ int gsnedf_omlp_lock(struct litmus_lock* l) {
 		// We hold the lock
 		sem->owner = t;
 		spin_unlock_irqrestore(&sem->fq.lock, flags);
+		TS_LOCK_END
 	}
 
 	// Update the number of locks held, and continue to critical-section

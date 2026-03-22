@@ -108,7 +108,8 @@ asmlinkage long sys_litmus_lock_arg(int lock_od, void* __user arg)
 
 	TS_SYSCALL_IN_END;
 
-	TS_LOCK_START;
+	// These timestamps are done in the lock function
+	//TS_LOCK_START;
 
 	entry = get_entry_for_od(lock_od);
 	if (entry && is_lock(entry)) {
@@ -121,9 +122,7 @@ asmlinkage long sys_litmus_lock_arg(int lock_od, void* __user arg)
 		}
 	}
 
-	/* Note: task my have been suspended or preempted in between!  Take
-	 * this into account when computing overheads. */
-	TS_LOCK_END;
+	//TS_LOCK_END;
 
 	TS_SYSCALL_OUT_START;
 
